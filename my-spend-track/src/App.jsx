@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import "./App.css";
 
 const STORAGE_KEY = "registru_finante_md";
@@ -49,11 +49,15 @@ export default function App() {
   }, [expenses, theme, isLoaded]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  
+  const months = useMemo(() => [...new Set(expenses.map(e => e.date.slice(0, 7)))].sort().reverse(), [expenses]);
 
-  const months = [...new Set(expenses.map(e => e.date.slice(0, 7)))].sort().reverse();
-
-  const filtered = [...expenses];
-  filtered.sort((a, b) => b.date.localeCompare(a.date));
+  const filtered = useMemo(() => {
+    let list = [...expenses];
+    if (filterCat !== "all") list = list.filter(e => e.category === filterCat);
+    if (filterMonth !== "all") list = list.filter(e => e.date.slice(0, 7) === filterMonth);
+    return list.sort((a, b) => b.date.localeCompare(a.date));
+  }, [expenses, filterCat, filterMonth]);
 
   const total = filtered.reduce((s, e) => s + e.amount, 0);
   const formatCurrency = (val) => val.toLocaleString('ro-MD', { minimumFractionDigits: 2 }) + " MDL";
@@ -67,31 +71,91 @@ export default function App() {
   };
 
   return (
-  <div className="container">
-    <header>
-      <div className="title-group">
-        <p>Monitorizare Cheltuieli Personale</p>
-        <h1>registru.</h1>
-      </div>
-      <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-        {theme === "dark" ? "Lumină" : "Întuneric"}
-      </button>
-    </header>
+    <div className="container">
+      <header>
+        <div className="title-group">
+          <p>Monitorizare Cheltuieli Personale</p>
+          <h1>registru.</h1>
+        </div>
+        <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+          {theme === "dark" ? "Lumină" : "Întuneric"}
+        </button>
+      </header>
 
-    <div className="summary-grid">
-      <div className="card">
-        <div className="card-label">Total Filtru</div>
-        <div className="card-value" style={{color: "var(--accent)"}}>{formatCurrency(total)}</div>
+      <div className="summary-grid">
+        <div className="card">
+          <div className="card-label">Total Filtru</div>
+          <div className="card-value" style={{color: "var(--accent)"}}>{formatCurrency(total)}</div>
+        </div>
+        <div className="card">
+          <div className="card-label">Rulaj Total</div>
+          <div className="card-value">{formatCurrency(expenses.reduce((s,e)=>s+e.amount,0))}</div>
+        </div>
+        <div className="card">
+          <div className="card-label">Înregistrări</div>
+          <div className="card-value">{expenses.length}</div>
+        </div>
       </div>
-      <div className="card">
-        <div className="card-label">Rulaj Total</div>
-        <div className="card-value">{formatCurrency(expenses.reduce((s,e)=>s+e.amount,0))}</div>
+
+      <div className="controls">
+        <div style={{display:'flex', gap:'12px'}}>
+          <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+            <option value="all">Toate lunile</option>
+            {months.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+            <option value="all">Toate categoriile</option>
+            {DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-main" onClick={() => setShowAdd(true)}>+ Adaugă Tranzacție</button>
       </div>
-      <div className="card">
-        <div className="card-label">Înregistrări</div>
-        <div className="card-value">{expenses.length}</div>
-      </div>
+
+      <table className="ledger-table">
+        <thead>
+          <tr>
+            <th className="col-date">Dată</th>
+            <th className="col-desc">Descriere</th>
+            <th className="col-cat">Categorie</th>
+            <th className="col-amount">Sumă</th>
+            <th className="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map(exp => {
+            const cat = DEFAULT_CATEGORIES.find(c => c.id === exp.category);
+            return (
+              <tr key={exp.id}>
+                <td className="col-date">{exp.date}</td>
+                <td className="col-desc" title={exp.description}>{exp.description || "—"}</td>
+                <td className="col-cat" style={{color: "var(--muted)"}}>{cat?.name}</td>
+                <td className="col-amount amount-cell">{formatCurrency(exp.amount)}</td>
+                <td className="col-actions">
+                  <button 
+                    onClick={() => setExpenses(p => p.filter(e => e.id !== exp.id))} 
+                    style={{background:'none', border:'none', color: 'var(--muted)', cursor:'pointer', fontSize:'20px'}}
+                  >
+                    ×
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {filtered.length === 0 && (
+        <div style={{
+          textAlign:'center', 
+          padding: '80px', 
+          border: '1px solid var(--border)', 
+          borderTop: 'none', 
+          color: 'var(--muted)', 
+          fontStyle: 'italic'
+        }}>
+          Nu sunt date disponibile pentru selecția curentă.
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
 }
