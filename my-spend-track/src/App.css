@@ -201,6 +201,23 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
 }
 .btn-upload:hover { border-color: var(--accent); color: var(--accent); }
 
+.io-section .field label {
+  display: block; font-size: 10px; text-transform: uppercase;
+  color: var(--muted); font-weight: 800; margin-bottom: 8px; letter-spacing: 1px;
+}
+.io-section textarea {
+  width: 100%; height: 140px; resize: vertical;
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 12px 14px; font-size: 12px; font-family: monospace;
+  color: var(--text); border-radius: 4px; outline: none; line-height: 1.6;
+}
+.io-section textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.io-section textarea::placeholder { color: var(--muted); }
+
+.io-stats-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+}
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
@@ -234,4 +251,5 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
   .donut-wrap { flex-direction: column; }
   .donut-canvas { width: 160px; height: 160px; }
   .io-grid { grid-template-columns: 1fr; }
+  .io-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }

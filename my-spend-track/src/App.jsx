@@ -47,6 +47,7 @@ export default function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [showSalary, setShowSalary] = useState(false);
   const [salaryInput, setSalaryInput] = useState("");
+  const [pasteText, setPasteText] = useState("");
   const [newExp, setNewExp] = useState({
     date: new Date().toISOString().slice(0, 10),
     amount: "", category: "food", description: ""
@@ -99,6 +100,10 @@ export default function App() {
 
   const totalAll = useMemo(() =>
     expenses.reduce((s, e) => s + e.amount, 0),
+    [expenses]);
+
+  const uniqueMonths = useMemo(() =>
+    [...new Set(expenses.map(e => e.date.slice(0, 7)))].length,
     [expenses]);
 
   const topCategory = useMemo(() => {
@@ -272,6 +277,7 @@ export default function App() {
       .filter(e => e.date && !isNaN(e.amount));
     if (!imported.length) { showToast("Nicio înregistrare validă găsită în fișier"); return; }
     setExpenses(prev => [...prev, ...imported]);
+    setPasteText("");
     showToast(`${imported.length} înregistrări importate din CSV`);
   };
 
@@ -297,7 +303,14 @@ export default function App() {
     }
     if (!imported.length) { showToast("Format nerecunoscut sau fără date valide"); return; }
     setExpenses(prev => [...prev, ...imported]);
+    setPasteText("");
     showToast(`${imported.length} înregistrări importate din text`);
+  };
+
+  const importPasted = () => {
+    if (!pasteText.trim()) return;
+    if (pasteText.includes("|")) importLLM(pasteText);
+    else importCSV(pasteText);
   };
 
   if (!isLoaded) return null;
@@ -539,6 +552,34 @@ export default function App() {
             <button className="btn-upload" onClick={() => fileRef.current?.click()}>
               ↑ Încarcă fișier — .csv sau .txt
             </button>
+
+            <div className="field" style={{ marginTop: 20 }}>
+              <label>Sau lipește text direct</label>
+              <textarea
+                value={pasteText}
+                onChange={e => setPasteText(e.target.value)}
+                placeholder={`Exemplu CSV:\n2026-04-01,7500.00,housing,\"Chirie & Servicii Comunale\",\"Chirie apartament\"\n\nExemplu Text LLM:\n## Cheltuieli\n2026-04-01 | 7500.00 | housing | Chirie apartament`}
+              />
+            </div>
+            <button className="btn btn-main" onClick={importPasted} style={{ marginTop: 8 }}>
+              Importă Text
+            </button>
+          </div>
+
+          <div className="io-divider" />
+
+          <div className="io-stats-grid">
+            {[
+              ["Înregistrări", expenses.length],
+              ["Categorii", DEFAULT_CATEGORIES.length],
+              ["Luni", uniqueMonths],
+              ["Total", formatCurrency(totalAll)],
+            ].map(([label, val]) => (
+              <div key={label} className="card">
+                <div className="card-label">{label}</div>
+                <div className="card-value" style={{ fontSize: 22 }}>{val}</div>
+              </div>
+            ))}
           </div>
         </main>
       )}
