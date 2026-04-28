@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Chart as ChartJS, ArcElement, Tooltip as CJTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
@@ -47,11 +47,13 @@ export default function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [showSalary, setShowSalary] = useState(false);
   const [salaryInput, setSalaryInput] = useState("");
+  const [pasteText, setPasteText] = useState("");
   const [newExp, setNewExp] = useState({
     date: new Date().toISOString().slice(0, 10),
     amount: "", category: "food", description: ""
   });
   const [toast, setToast] = useState(null);
+  const fileRef = useRef();
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -98,6 +100,10 @@ export default function App() {
 
   const totalAll = useMemo(() =>
     expenses.reduce((s, e) => s + e.amount, 0),
+    [expenses]);
+
+  const uniqueMonths = useMemo(() =>
+    [...new Set(expenses.map(e => e.date.slice(0, 7)))].length,
     [expenses]);
 
   const topCategory = useMemo(() => {
@@ -165,7 +171,10 @@ export default function App() {
   const remaining = salary ? salary - curMonthTotal : null;
 
   const addExpense = () => {
-    if (!newExp.amount || isNaN(+newExp.amount)) return;
+    if (!newExp.amount || isNaN(+newExp.amount)) {
+      showToast("Introduceți o sumă validă");
+      return;
+    }
     setExpenses(prev => [{ ...newExp, id: uid(), amount: +newExp.amount }, ...prev]);
     setShowAdd(false);
     setNewExp({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
@@ -174,9 +183,150 @@ export default function App() {
 
   const saveSalary = () => {
     const v = +salaryInput;
+    if (v < 0) {
+      showToast("Introduceți un salariu valid");
+      return;
+    }
     setSalary(v > 0 ? v : null);
     setShowSalary(false);
     showToast(v > 0 ? "Salariu configurat cu succes" : "Salariu eliminat");
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // EXPORT
+  // ══════════════════════════════════════════════════════════════
+
+  const download = (content, filename, type) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = filename;
+    a.click();
+  };
+
+  const exportCSV = () => {
+    const header = ["Dată", "Sumă (MDL)", "Categorie ID", "Categorie Nume", "Descriere"];
+    const rows = expenses.map(e => {
+      const cat = DEFAULT_CATEGORIES.find(c => c.id === e.category);
+      return [
+        e.date,
+        e.amount.toFixed(2),
+        e.category,
+        `"${cat?.name || e.category}"`,
+        `"${e.description || ""}"`,
+      ];
+    });
+    const csv = [header.join(","), ...rows.map(r => r.join(","))].join("\n");
+    download(csv, "registru-cheltuieli.csv", "text/csv");
+    showToast("Export CSV finalizat");
+  };
+
+  const exportLLM = () => {
+    const monthStats = {};
+    expenses.forEach(e => {
+      const m = e.date.slice(0, 7);
+      if (!monthStats[m]) monthStats[m] = { total: 0, count: 0 };
+      monthStats[m].total += e.amount;
+      monthStats[m].count++;
+    });
+    const lines = [
+      "# Registru Cheltuieli — Export Text",
+      `Generat: ${new Date().toLocaleString("ro-RO")}`,
+      `Total înregistrări: ${expenses.length}`,
+      "",
+      "## Categorii",
+      ...DEFAULT_CATEGORIES.map(c => `- [${c.id}] ${c.name}`),
+      "",
+      "## Cheltuieli (dată | sumă MDL | categorie_id | descriere)",
+      ...expenses
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(e => `${e.date} | ${e.amount.toFixed(2)} | ${e.category} | ${e.description || ""}`),
+      "",
+      "## Sumar Lunar",
+      ...Object.entries(monthStats)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([m, d]) => `${m}: ${d.total.toFixed(2)} MDL (${d.count} înregistrări)`),
+    ];
+    download(lines.join("\n"), "registru-cheltuieli-llm.txt", "text/plain");
+    showToast("Export LLM text finalizat");
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // IMPORT
+  // ══════════════════════════════════════════════════════════════
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target.result;
+      if (file.name.endsWith(".csv")) importCSV(text);
+      else importLLM(text);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const importCSV = (text) => {
+    const lines = text.trim().split("\n").slice(1);
+    const imported = lines
+      .map(line => {
+        const parts = line.split(",");
+        return {
+          id: uid(),
+          date: parts[0]?.trim(),
+          amount: parseFloat(parts[1]),
+          category: parts[2]?.trim() || "other",
+          description: (parts[4] || parts[3] || "").replace(/^"|"$/g, "").trim(),
+        };
+      })
+      .filter(e => e.date && !isNaN(e.amount));
+    if (!imported.length) { showToast("Nicio înregistrare validă găsită în fișier"); return; }
+    setExpenses(prev => {
+      const existingIds = new Set(prev.map(e => e.id));
+      return [...prev, ...imported.filter(e => !existingIds.has(e.id))];
+    });
+    setPasteText("");
+    showToast(`${imported.length} înregistrări importate din CSV`);
+  };
+
+  const importLLM = (text) => {
+    let inExpenses = false;
+    const imported = [];
+    for (const line of text.split("\n")) {
+      if (line.startsWith("## Cheltuieli") || line.startsWith("## Expenses")) {
+        inExpenses = true; continue;
+      }
+      if (line.startsWith("## ") && inExpenses) { inExpenses = false; continue; }
+      if (inExpenses && line.includes("|")) {
+        const parts = line.split("|").map(p => p.trim());
+        const entry = {
+          id: uid(),
+          date: parts[0],
+          amount: parseFloat(parts[1]),
+          category: parts[2] || "other",
+          description: parts[3] || "",
+        };
+        if (entry.date && !isNaN(entry.amount)) imported.push(entry);
+      }
+    }
+    if (!imported.length) { showToast("Format nerecunoscut sau fără date valide"); return; }
+    setExpenses(prev => {
+      const existingIds = new Set(prev.map(e => e.id));
+      return [...prev, ...imported.filter(e => !existingIds.has(e.id))];
+    });
+    setPasteText("");
+    showToast(`${imported.length} înregistrări importate din text`);
+  };
+
+  const importPasted = () => {
+    if (!pasteText.trim()) {
+      showToast("Lipiți textul cu date pentru import");
+      return;
+    }
+    if (pasteText.includes("|")) importLLM(pasteText);
+    else importCSV(pasteText);
   };
 
   if (!isLoaded) return null;
@@ -186,12 +336,13 @@ export default function App() {
       <header>
         <div className="title-group">
           <p>Sistem de Evidență și Gestiune</p>
-          <h1>{view === "sinteza" ? "Sinteză" : "Registru"}</h1>
+          <h1>{view === "sinteza" ? "Sinteză" : view === "jurnal" ? "Registru" : "Date"}</h1>
         </div>
         <div className="header-actions">
           <div className="view-switcher">
             <button className={view === "sinteza" ? "active" : ""} onClick={() => setView("sinteza")}>Dashboard</button>
             <button className={view === "jurnal" ? "active" : ""} onClick={() => setView("jurnal")}>Jurnal</button>
+            <button className={view === "io" ? "active" : ""} onClick={() => setView("io")}>Date</button>
           </div>
           <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? "Mod Luminos" : "Mod Întunecat"}
@@ -199,7 +350,8 @@ export default function App() {
         </div>
       </header>
 
-      {view === "sinteza" ? (
+      {/* ═══════════ DASHBOARD ═══════════ */}
+      {view === "sinteza" && (
         <main className="fade-in">
           <div className="summary-grid">
             <div className="card highlight">
@@ -327,7 +479,10 @@ export default function App() {
             </div>
           </div>
         </main>
-      ) : (
+      )}
+
+      {/* ═══════════ JURNAL ═══════════ */}
+      {view === "jurnal" && (
         <main className="fade-in">
           <div className="controls">
             <div className="filters">
@@ -381,7 +536,69 @@ export default function App() {
         </main>
       )}
 
-      {/* Modal Adaugă Tranzacție */}
+      {/* ═══════════ IMPORT / EXPORT ═══════════ */}
+      {view === "io" && (
+        <main className="fade-in">
+          <div className="io-section">
+            <div className="io-section-label">Export Date</div>
+            <div className="io-grid">
+              <div className="io-card" onClick={exportCSV}>
+                <div className="io-card-name">CSV</div>
+                <div className="io-card-desc">Excel / Google Sheets</div>
+              </div>
+              <div className="io-card" onClick={exportLLM}>
+                <div className="io-card-name">Text LLM</div>
+                <div className="io-card-desc">Paste în orice asistent AI</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="io-divider" />
+
+          <div className="io-section">
+            <div className="io-section-label">Import Date</div>
+            <p className="io-hint">
+              Formate acceptate: <strong>CSV</strong> (coloane: dată, sumă, categorie_id, categorie_nume, descriere)
+              sau <strong>Text LLM</strong> (format pipe: <code>dată | sumă | categorie_id | descriere</code>).
+            </p>
+
+            <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFile} style={{ display: "none" }} />
+            <button className="btn-upload" onClick={() => fileRef.current?.click()}>
+              ↑ Încarcă fișier — .csv sau .txt
+            </button>
+
+            <div className="field" style={{ marginTop: 20 }}>
+              <label>Sau lipește text direct</label>
+              <textarea
+                value={pasteText}
+                onChange={e => setPasteText(e.target.value)}
+                placeholder={`Exemplu CSV:\n2026-04-01,7500.00,housing,\"Chirie & Servicii Comunale\",\"Chirie apartament\"\n\nExemplu Text LLM:\n## Cheltuieli\n2026-04-01 | 7500.00 | housing | Chirie apartament`}
+              />
+            </div>
+            <button className="btn btn-main" onClick={importPasted} style={{ marginTop: 8 }}>
+              Importă Text
+            </button>
+          </div>
+
+          <div className="io-divider" />
+
+          <div className="io-stats-grid">
+            {[
+              ["Înregistrări", expenses.length],
+              ["Categorii", DEFAULT_CATEGORIES.length],
+              ["Luni", uniqueMonths],
+              ["Total", formatCurrency(totalAll)],
+            ].map(([label, val]) => (
+              <div key={label} className="card">
+                <div className="card-label">{label}</div>
+                <div className="card-value" style={{ fontSize: 22 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+        </main>
+      )}
+
+      {/* ═══════════ MODALS ═══════════ */}
       {showAdd && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
           <div className="modal-box">
@@ -412,7 +629,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Salariu */}
       {showSalary && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSalary(false)}>
           <div className="modal-box">
