@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Chart as ChartJS, ArcElement, Tooltip as CJTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
@@ -6,7 +6,7 @@ import "./App.css";
 
 ChartJS.register(ArcElement, CJTooltip, Legend);
 
-const STORAGE_KEY = "registru_finante_editorial_v5";
+const STORAGE_KEY = "registru_finante_editorial_v3";
 
 const DEFAULT_CATEGORIES = [
   { id: "food", name: "Alimentație & Produse", color: "#2e7d32" },
@@ -186,12 +186,13 @@ export default function App() {
       <header>
         <div className="title-group">
           <p>Sistem de Evidență și Gestiune</p>
-          <h1>{view === "sinteza" ? "Sinteză" : "Registru"}</h1>
+          <h1>{view === "sinteza" ? "Sinteză" : view === "jurnal" ? "Registru" : "Date"}</h1>
         </div>
         <div className="header-actions">
           <div className="view-switcher">
             <button className={view === "sinteza" ? "active" : ""} onClick={() => setView("sinteza")}>Dashboard</button>
             <button className={view === "jurnal" ? "active" : ""} onClick={() => setView("jurnal")}>Jurnal</button>
+            <button className={view === "io" ? "active" : ""} onClick={() => setView("io")}>Date</button>
           </div>
           <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? "Mod Luminos" : "Mod Întunecat"}
@@ -199,7 +200,8 @@ export default function App() {
         </div>
       </header>
 
-      {view === "sinteza" ? (
+      {/* Dashboard View */}
+      {view === "sinteza" && (
         <main className="fade-in">
           <div className="summary-grid">
             <div className="card highlight">
@@ -327,7 +329,10 @@ export default function App() {
             </div>
           </div>
         </main>
-      ) : (
+      )}
+
+      {/* Jurnal View */}
+      {view === "jurnal" && (
         <main className="fade-in">
           <div className="controls">
             <div className="filters">
@@ -381,7 +386,7 @@ export default function App() {
         </main>
       )}
 
-      {/* Modal Adaugă Tranzacție */}
+      {/* Modal Add */}
       {showAdd && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
           <div className="modal-box">
@@ -412,7 +417,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Salariu */}
+      {/* Modal Salary */}
       {showSalary && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSalary(false)}>
           <div className="modal-box">
