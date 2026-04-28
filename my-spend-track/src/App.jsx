@@ -50,17 +50,48 @@ export default function App() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
+  const months = [...new Set(expenses.map(e => e.date.slice(0, 7)))].sort().reverse();
+
+  const filtered = [...expenses];
+  filtered.sort((a, b) => b.date.localeCompare(a.date));
+
+  const total = filtered.reduce((s, e) => s + e.amount, 0);
+  const formatCurrency = (val) => val.toLocaleString('ro-MD', { minimumFractionDigits: 2 }) + " MDL";
+
+  const addExpense = () => {
+    if (!newExp.amount || isNaN(+newExp.amount)) return;
+    setExpenses(p => [{ ...newExp, id: uid(), amount: +newExp.amount }, ...p]);
+    setShowAdd(false);
+    setNewExp({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
+    showToast("Tranzacție înregistrată");
+  };
+
   return (
-    <div className="container">
-      <header>
-        <div className="title-group">
-          <p>Monitorizare Cheltuieli Personale</p>
-          <h1>Registru</h1>
-        </div>
-        <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-          {theme === "dark" ? "Light Mode" : "Dark Mode"}
-        </button>
-      </header>
+  <div className="container">
+    <header>
+      <div className="title-group">
+        <p>Monitorizare Cheltuieli Personale</p>
+        <h1>registru.</h1>
+      </div>
+      <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+        {theme === "dark" ? "Lumină" : "Întuneric"}
+      </button>
+    </header>
+
+    <div className="summary-grid">
+      <div className="card">
+        <div className="card-label">Total Filtru</div>
+        <div className="card-value" style={{color: "var(--accent)"}}>{formatCurrency(total)}</div>
+      </div>
+      <div className="card">
+        <div className="card-label">Rulaj Total</div>
+        <div className="card-value">{formatCurrency(expenses.reduce((s,e)=>s+e.amount,0))}</div>
+      </div>
+      <div className="card">
+        <div className="card-label">Înregistrări</div>
+        <div className="card-value">{expenses.length}</div>
+      </div>
     </div>
-  );
+  </div>
+);
 }
