@@ -1,7 +1,27 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { Chart as ChartJS, ArcElement, Tooltip as CJTooltip, Legend } from "chart.js";
+import { Doughnut } from "react-chartjs-2";
 import "./App.css";
 
-const STORAGE_KEY = "registru_finante_editorial_v2";
+ChartJS.register(ArcElement, CJTooltip, Legend);
+
+const STORAGE_KEY = "registru_finante_editorial_v3";
+
+const DEFAULT_CATEGORIES = [
+  { id: "food", name: "Alimentație & Produse", color: "#2e7d32" },
+  { id: "transport", name: "Transport & Combustibil", color: "#546e7a" },
+  { id: "housing", name: "Chirie & Servicii Comunale", color: "#455a64" },
+  { id: "health", name: "Sănătate & Farmacie", color: "#c62828" },
+  { id: "entertainment", name: "Timp Liber & Cultură", color: "#1565c0" },
+  { id: "shopping", name: "Cumpărături & Haine", color: "#6a1b9a" },
+  { id: "other", name: "Diverse", color: "#9e9e9e" },
+];
+
+const DONUT_COLORS = [
+  "#6366f1", "#f59e0b", "#10b981", "#ef4444",
+  "#3b82f6", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316",
+];
 
 const SAMPLE_DATA = [
   { id: "1", date: "2026-03-15", amount: 1200.00, category: "shopping", description: "Monitor nou" },
@@ -53,6 +73,67 @@ export default function App() {
   const totalAll = useMemo(() =>
     expenses.reduce((s, e) => s + e.amount, 0),
     [expenses]);
+
+  const topCategory = useMemo(() => {
+    const totals = {};
+    curMonthExpenses.forEach(e => {
+      totals[e.category] = (totals[e.category] || 0) + e.amount;
+    });
+    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) return null;
+    const cat = DEFAULT_CATEGORIES.find(c => c.id === sorted[0][0]);
+    return { cat, total: sorted[0][1] };
+  }, [curMonthExpenses]);
+
+  const donutData = useMemo(() => {
+    const totals = {};
+    curMonthExpenses.forEach(e => {
+      totals[e.category] = (totals[e.category] || 0) + e.amount;
+    });
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, total]) => ({ id, total, cat: DEFAULT_CATEGORIES.find(c => c.id === id) }));
+  }, [curMonthExpenses]);
+
+  const donutChartData = {
+    labels: donutData.map(d => d.cat?.name || d.id),
+    datasets: [{
+      data: donutData.map(d => d.total),
+      backgroundColor: DONUT_COLORS.slice(0, donutData.length),
+      borderWidth: 2,
+      borderColor: theme === "dark" ? "#151b23" : "#ffffff",
+      hoverOffset: 6,
+    }],
+  };
+
+  const donutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: "68%",
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: { label: (ctx) => ` ${formatCurrency(ctx.raw)}` }
+      }
+    }
+  };
+
+  const chartData = useMemo(() => {
+    const stats = {};
+    expenses.forEach(e => {
+      const mKey = e.date.slice(0, 7);
+      stats[mKey] = (stats[mKey] || 0) + e.amount;
+    });
+    return Object.entries(stats)
+      .map(([key, val]) => {
+        const [y, m] = key.split("-");
+        const dateObj = new Date(parseInt(y), parseInt(m) - 1);
+        const monthName = dateObj.toLocaleDateString("ro-RO", { month: "short" });
+        return { label: `${monthName} '${y.slice(2)}`, total: val, rawDate: key };
+      })
+      .sort((a, b) => a.rawDate.localeCompare(b.rawDate))
+      .slice(-6);
+  }, [expenses]);
 
   const salaryPct = salary ? Math.min(100, Math.round(curMonthTotal / salary * 100)) : null;
   const remaining = salary ? salary - curMonthTotal : null;
@@ -116,6 +197,85 @@ export default function App() {
               <div className="card-hint">Urmărește bugetul rămas</div>
             </div>
           )}
+        </div>
+
+        <div className="dashboard-content">
+          <div className="card chart-area">
+            <div className="card-label">Evoluție Flux Financiar (6 luni)</div>
+            <div style={{ width: "100%", height: 220, marginTop: 16 }}>
+              <ResponsiveContainer>
+                <BarChart data={chartData}>
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted)" }} dy={10} />
+                  <YAxis hide domain={[0, "auto"]} />
+                  <Tooltip
+                    cursor={{ fill: "var(--stripe)" }}
+                    contentStyle={{ borderRadius: 0, border: "1px solid var(--border)", fontFamily: "Inter" }}
+                    formatter={(v) => [v.toLocaleString("ro-MD", { minimumFractionDigits: 2 }) + " MDL", "Total"]}
+                  />
+                  <Bar dataKey="total" fill="var(--text)" barSize={42} radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-label">Distribuție Cheltuieli — Luna Curentă</div>
+            {donutData.length > 0 ? (
+              <div className="donut-wrap">
+                <div className="donut-canvas">
+                  <Doughnut data={donutChartData} options={donutOptions} />
+                </div>
+                <div className="donut-legend">
+                  {donutData.map((d, i) => {
+                    const total = donutData.reduce((s, x) => s + x.total, 0);
+                    const pct = Math.round(d.total / total * 100);
+                    return (
+                      <div key={d.id} className="legend-item">
+                        <span className="legend-swatch" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                        <span className="legend-name">{d.cat?.name || d.id}</span>
+                        <span className="legend-pct">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-donut">Nicio cheltuială luna aceasta.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="dashboard-bottom">
+          <div className="card top-cat-card">
+            <div className="card-label">Categoria Top — Luna Curentă</div>
+            {topCategory ? (
+              <div>
+                <div className="top-cat-badge" style={{
+                  background: `${topCategory.cat?.color || "#666"}18`,
+                  border: `1px solid ${topCategory.cat?.color || "#666"}44`
+                }}>
+                  <span className="cat-dot" style={{ background: topCategory.cat?.color || "#666" }} />
+                  <span style={{ color: topCategory.cat?.color || "#666" }}>{topCategory.cat?.name || topCategory.cat?.id}</span>
+                </div>
+                <div className="top-cat-amount">{formatCurrency(topCategory.total)}</div>
+                <div className="card-sub">cheltuită în luna curentă</div>
+              </div>
+            ) : (
+              <div className="empty-donut">Nicio cheltuială luna aceasta.</div>
+            )}
+          </div>
+          
+          <div className="card recent-entries">
+            <div className="card-label">Ultimele 5 Tranzacții</div>
+            <div className="mini-ledger">
+              {expenses.slice(0, 5).map(e => (
+                <div key={e.id} className="mini-row">
+                  <span className="desc">{e.description || "Fără descriere"}</span>
+                  <span className="amt">{formatCurrency(e.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </main>
     </div>
