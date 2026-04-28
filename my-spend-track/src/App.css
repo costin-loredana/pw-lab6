@@ -65,6 +65,7 @@ header {
 .card {
   background: var(--surface); padding: 25px; border: 1px solid var(--border);
   box-shadow: 0 10px 30px var(--shadow); position: relative;
+  border-radius: 2px;
 }
 .card.highlight { border-left: 5px solid var(--accent); }
 .card.salary-card { border-left: 5px solid #7c3aed; }
@@ -129,6 +130,7 @@ select, input {
 select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 .btn-main { background: var(--text); color: var(--bg); }
+.btn-main:hover { opacity: 0.9; }
 
 .table-container { overflow-x: auto; }
 .ledger-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); }
@@ -137,7 +139,9 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1
   color: var(--muted); border-bottom: 2px solid var(--border); letter-spacing: 2px; background: var(--stripe);
 }
 .ledger-table td { padding: 18px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.ledger-table tbody tr { transition: background 0.15s ease; }
 .ledger-table tbody tr:nth-child(even) { background: var(--stripe); }
+.ledger-table tbody tr:hover { background: var(--hover, rgba(0,0,0,0.02)); }
 .amount-cell { font-family: 'Playfair Display', serif; font-weight: 600; font-size: 18px; text-align: right; }
 
 .col-date { width: 120px; color: var(--muted); }
@@ -222,11 +226,13 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
   backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; z-index: 1000;
+  animation: fadeIn 0.2s ease;
 }
 .modal-box {
   background: var(--surface); padding: 45px; width: 450px;
   border: 1px solid var(--border); box-shadow: 0 40px 100px rgba(0,0,0,0.3); border-radius: 4px;
   max-height: 90vh; overflow-y: auto;
+  animation: slideUp 0.3s ease;
 }
 .serif-header { font-family: 'Playfair Display', serif; font-style: italic; font-size: 32px; margin-bottom: 30px; }
 
@@ -241,15 +247,54 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
   position: fixed; bottom: 30px; right: 30px; background: var(--text); color: var(--bg);
   padding: 15px 30px; border-radius: 4px; font-weight: 600; font-size: 13px;
   z-index: 1100; animation: slideUp 0.4s ease;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
 
 @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 /* ── Responsive ── */
-@media (max-width: 800px) {
-  .summary-grid, .dashboard-content, .dashboard-bottom { grid-template-columns: 1fr; }
-  .donut-wrap { flex-direction: column; }
-  .donut-canvas { width: 160px; height: 160px; }
+@media (max-width: 900px) {
+  .container { padding: 30px 16px; }
+  
+  header { flex-direction: column; align-items: flex-start; }
+  .header-actions { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+  
+  .title-group h1 { font-size: 32px; }
+  
+  .summary-grid { grid-template-columns: 1fr; }
+  .dashboard-content, .dashboard-bottom { grid-template-columns: 1fr; }
+  
   .io-grid { grid-template-columns: 1fr; }
   .io-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  
+  .modal-box { width: 90%; padding: 30px; }
+  .serif-header { font-size: 26px; }
+  
+  .ledger-table th, .ledger-table td { padding: 12px; font-size: 12px; }
+  .col-date { width: 90px; }
+}
+
+@media (max-width: 600px) {
+  .container { padding: 20px 12px; }
+  
+  .title-group h1 { font-size: 26px; }
+  .title-group p { font-size: 9px; letter-spacing: 2px; }
+  
+  .view-switcher button { padding: 6px 12px; font-size: 11px; }
+  
+  .card { padding: 18px; }
+  .card-value { font-size: 24px; }
+  
+  .donut-wrap { flex-direction: column; }
+  .donut-canvas { width: 160px; height: 160px; }
+  
+  .controls { flex-direction: column; }
+  .filters { flex-direction: column; width: 100%; }
+  .filters select { width: 100%; }
+  
+  .io-stats-grid { grid-template-columns: 1fr; }
+  
+  .toast-alert { left: 20px; right: 20px; bottom: 20px; text-align: center; }
+  
+  .empty-msg { padding: 40px 20px; }
 }

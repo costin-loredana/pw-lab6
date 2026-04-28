@@ -6,7 +6,7 @@ import "./App.css";
 
 ChartJS.register(ArcElement, CJTooltip, Legend);
 
-const STORAGE_KEY = "registru_finante_editorial_v3";
+const STORAGE_KEY = "registru_finante_editorial_v5";
 
 const DEFAULT_CATEGORIES = [
   { id: "food", name: "Alimentație & Produse", color: "#2e7d32" },
@@ -171,7 +171,10 @@ export default function App() {
   const remaining = salary ? salary - curMonthTotal : null;
 
   const addExpense = () => {
-    if (!newExp.amount || isNaN(+newExp.amount)) return;
+    if (!newExp.amount || isNaN(+newExp.amount)) {
+      showToast("Introduceți o sumă validă");
+      return;
+    }
     setExpenses(prev => [{ ...newExp, id: uid(), amount: +newExp.amount }, ...prev]);
     setShowAdd(false);
     setNewExp({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
@@ -180,6 +183,10 @@ export default function App() {
 
   const saveSalary = () => {
     const v = +salaryInput;
+    if (v < 0) {
+      showToast("Introduceți un salariu valid");
+      return;
+    }
     setSalary(v > 0 ? v : null);
     setShowSalary(false);
     showToast(v > 0 ? "Salariu configurat cu succes" : "Salariu eliminat");
@@ -276,7 +283,10 @@ export default function App() {
       })
       .filter(e => e.date && !isNaN(e.amount));
     if (!imported.length) { showToast("Nicio înregistrare validă găsită în fișier"); return; }
-    setExpenses(prev => [...prev, ...imported]);
+    setExpenses(prev => {
+      const existingIds = new Set(prev.map(e => e.id));
+      return [...prev, ...imported.filter(e => !existingIds.has(e.id))];
+    });
     setPasteText("");
     showToast(`${imported.length} înregistrări importate din CSV`);
   };
@@ -302,13 +312,19 @@ export default function App() {
       }
     }
     if (!imported.length) { showToast("Format nerecunoscut sau fără date valide"); return; }
-    setExpenses(prev => [...prev, ...imported]);
+    setExpenses(prev => {
+      const existingIds = new Set(prev.map(e => e.id));
+      return [...prev, ...imported.filter(e => !existingIds.has(e.id))];
+    });
     setPasteText("");
     showToast(`${imported.length} înregistrări importate din text`);
   };
 
   const importPasted = () => {
-    if (!pasteText.trim()) return;
+    if (!pasteText.trim()) {
+      showToast("Lipiți textul cu date pentru import");
+      return;
+    }
     if (pasteText.includes("|")) importLLM(pasteText);
     else importCSV(pasteText);
   };
@@ -527,12 +543,10 @@ export default function App() {
             <div className="io-section-label">Export Date</div>
             <div className="io-grid">
               <div className="io-card" onClick={exportCSV}>
-                <div className="io-icon">📊</div>
                 <div className="io-card-name">CSV</div>
                 <div className="io-card-desc">Excel / Google Sheets</div>
               </div>
               <div className="io-card" onClick={exportLLM}>
-                <div className="io-icon">📝</div>
                 <div className="io-card-name">Text LLM</div>
                 <div className="io-card-desc">Paste în orice asistent AI</div>
               </div>
