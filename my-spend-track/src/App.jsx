@@ -6,7 +6,7 @@ import "./App.css";
 
 ChartJS.register(ArcElement, CJTooltip, Legend);
 
-const STORAGE_KEY = "registru_finante_editorial_v4";
+const STORAGE_KEY = "registru_finante_editorial_v5";
 
 const DEFAULT_CATEGORIES = [
   { id: "food", name: "Alimentație & Produse", color: "#2e7d32" },
@@ -34,6 +34,8 @@ const SAMPLE_DATA = [
   { id: "8", date: "2026-03-20", amount: 450.00, category: "transport", description: "Revizie mașină" },
 ];
 
+function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
 export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [theme, setTheme] = useState("light");
@@ -42,6 +44,14 @@ export default function App() {
   const [salary, setSalary] = useState(null);
   const [filterCat, setFilterCat] = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
+  const [showAdd, setShowAdd] = useState(false);
+  const [showSalary, setShowSalary] = useState(false);
+  const [salaryInput, setSalaryInput] = useState("");
+  const [newExp, setNewExp] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    amount: "", category: "food", description: ""
+  });
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -63,6 +73,7 @@ export default function App() {
     }
   }, [expenses, theme, salary, isLoaded]);
 
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const formatCurrency = (val) => val.toLocaleString("ro-MD", { minimumFractionDigits: 2 }) + " MDL";
 
   const monthsList = useMemo(() =>
@@ -153,6 +164,21 @@ export default function App() {
   const salaryPct = salary ? Math.min(100, Math.round(curMonthTotal / salary * 100)) : null;
   const remaining = salary ? salary - curMonthTotal : null;
 
+  const addExpense = () => {
+    if (!newExp.amount || isNaN(+newExp.amount)) return;
+    setExpenses(prev => [{ ...newExp, id: uid(), amount: +newExp.amount }, ...prev]);
+    setShowAdd(false);
+    setNewExp({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
+    showToast("Tranzacție salvată în registru");
+  };
+
+  const saveSalary = () => {
+    const v = +salaryInput;
+    setSalary(v > 0 ? v : null);
+    setShowSalary(false);
+    showToast(v > 0 ? "Salariu configurat cu succes" : "Salariu eliminat");
+  };
+
   if (!isLoaded) return null;
 
   return (
@@ -207,7 +233,7 @@ export default function App() {
                 <div className="card-sub">din {formatCurrency(salary)} salariu</div>
               </div>
             ) : (
-              <div className="card card-dashed" onClick={() => {}}>
+              <div className="card card-dashed" onClick={() => { setSalaryInput(""); setShowSalary(true); }}>
                 <div className="card-plus">+</div>
                 <div className="card-label">Adaugă Salariu</div>
                 <div className="card-hint">Urmărește bugetul rămas</div>
@@ -262,6 +288,19 @@ export default function App() {
           </div>
 
           <div className="dashboard-bottom">
+            <div className="card recent-entries">
+              <div className="card-label">Ultimele 5 Tranzacții</div>
+              <div className="mini-ledger">
+                {expenses.slice(0, 5).map(e => (
+                  <div key={e.id} className="mini-row">
+                    <span className="desc">{e.description || "Fără descriere"}</span>
+                    <span className="amt">{formatCurrency(e.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <button className="btn-text-link" onClick={() => setView("jurnal")}>Deschide Jurnalul Complet →</button>
+            </div>
+
             <div className="card top-cat-card">
               <div className="card-label">Categoria Top — Luna Curentă</div>
               {topCategory ? (
@@ -279,19 +318,12 @@ export default function App() {
               ) : (
                 <div className="empty-donut">Nicio cheltuială luna aceasta.</div>
               )}
-            </div>
-            
-            <div className="card recent-entries">
-              <div className="card-label">Ultimele 5 Tranzacții</div>
-              <div className="mini-ledger">
-                {expenses.slice(0, 5).map(e => (
-                  <div key={e.id} className="mini-row">
-                    <span className="desc">{e.description || "Fără descriere"}</span>
-                    <span className="amt">{formatCurrency(e.amount)}</span>
-                  </div>
-                ))}
-              </div>
-              <button className="btn-text-link" onClick={() => setView("jurnal")}>Deschide Jurnalul Complet →</button>
+              <button
+                className="btn-salary-config"
+                onClick={() => { setSalaryInput(salary?.toString() || ""); setShowSalary(true); }}
+              >
+                {salary ? `Modifică Salariu (${formatCurrency(salary)})` : "+ Configurează Salariu"}
+              </button>
             </div>
           </div>
         </main>
@@ -308,7 +340,7 @@ export default function App() {
                 {DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <button className="btn btn-main">+ Înregistrare Nouă</button>
+            <button className="btn btn-main" onClick={() => setShowAdd(true)}>+ Înregistrare Nouă</button>
           </div>
 
           <div className="table-container">
@@ -348,6 +380,63 @@ export default function App() {
           </div>
         </main>
       )}
+
+      {/* Modal Adaugă Tranzacție */}
+      {showAdd && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
+          <div className="modal-box">
+            <h2 className="serif-header">Formular Înregistrare</h2>
+            <div className="field">
+              <label>Data</label>
+              <input type="date" value={newExp.date} onChange={e => setNewExp(p => ({ ...p, date: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label>Sumă (MDL)</label>
+              <input type="number" placeholder="0.00" value={newExp.amount} onChange={e => setNewExp(p => ({ ...p, amount: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label>Categorie</label>
+              <select value={newExp.category} onChange={e => setNewExp(p => ({ ...p, category: e.target.value }))}>
+                {DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Descriere Detaliată</label>
+              <input type="text" placeholder="Ex: Chitanță utilități Aprilie" value={newExp.description} onChange={e => setNewExp(p => ({ ...p, description: e.target.value }))} />
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-main" style={{ flex: 1 }} onClick={addExpense}>Confirmă</button>
+              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Anulează</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Salariu */}
+      {showSalary && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSalary(false)}>
+          <div className="modal-box">
+            <h2 className="serif-header">Configurare Salariu</h2>
+            <div className="field">
+              <label>Salariu Lunar Net (MDL)</label>
+              <input
+                type="number"
+                placeholder="Ex: 18000"
+                value={salaryInput}
+                onChange={e => setSalaryInput(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <p className="salary-hint">Opțional. Permite calcularea bugetului rămas după cheltuieli.</p>
+            <div className="modal-footer">
+              <button className="btn btn-main" style={{ flex: 1 }} onClick={saveSalary}>Salvează</button>
+              <button className="btn btn-ghost" onClick={() => setShowSalary(false)}>Anulează</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast-alert">{toast}</div>}
     </div>
   );
 }
