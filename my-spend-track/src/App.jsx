@@ -75,10 +75,10 @@ export default function App() {
       <header>
         <div className="title-group">
           <p>Monitorizare Cheltuieli Personale</p>
-          <h1>registru.</h1>
+          <h1>Registru</h1>
         </div>
         <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-          {theme === "dark" ? "Lumină" : "Întuneric"}
+          {theme === "dark" ? "Light Mode" : "Dark Mode"}
         </button>
       </header>
 
@@ -156,6 +156,39 @@ export default function App() {
           Nu sunt date disponibile pentru selecția curentă.
         </div>
       )}
+
+      {showAdd && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
+          <div className="modal-content">
+            <h2 style={{fontFamily:'Playfair Display', marginBottom:'25px', fontSize:'28px'}}>Tranzacție Nouă</h2>
+            <div className="form-field">
+              <label>Data</label>
+              <input type="date" value={newExp.date} onChange={e => setNewExp(p=>({...p, date: e.target.value}))} />
+            </div>
+            <div className="form-field">
+              <label>Suma (MDL)</label>
+              <input type="number" placeholder="0.00" value={newExp.amount} onChange={e => setNewExp(p=>({...p, amount: e.target.value}))} />
+            </div>
+            <div className="form-field">
+              <label>Categorie</label>
+              <select value={newExp.category} onChange={e => setNewExp(p=>({...p, category: e.target.value}))}>
+                {DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-field">
+              <label>Descriere</label>
+              <input type="text" placeholder="Ex: Factură Orange..." value={newExp.description} onChange={e => setNewExp(p=>({...p, description: e.target.value}))} />
+            </div>
+            <div style={{display:'flex', gap: '12px', marginTop: '30px'}}>
+              <button className="btn btn-main" style={{flex: 1}} onClick={addExpense}>Înregistrează</button>
+              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Anulează</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATION - ADAUGAT LA COMMIT 8 */}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
