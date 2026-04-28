@@ -158,6 +158,40 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
 }
 .btn-salary-config:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ── Import / Export Page ── */
+.io-section { margin-bottom: 8px; }
+
+.io-section-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 3px;
+  color: var(--muted); font-weight: 800; margin-bottom: 16px;
+}
+
+.io-hint {
+  font-size: 13px; color: var(--muted); margin-bottom: 18px; line-height: 1.6;
+}
+.io-hint code {
+  background: var(--stripe); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 3px; font-size: 12px; font-family: monospace;
+}
+
+.io-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 4px;
+}
+
+.io-card {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 24px; text-align: center; cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+}
+.io-card:hover { border-color: var(--accent); box-shadow: 0 4px 16px var(--shadow); }
+.io-icon { font-size: 22px; margin-bottom: 10px; }
+.io-card-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.io-card-desc { font-size: 11px; color: var(--muted); }
+
+.io-divider {
+  height: 1px; background: var(--border); margin: 32px 0;
+}
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
@@ -190,4 +224,5 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
   .summary-grid, .dashboard-content, .dashboard-bottom { grid-template-columns: 1fr; }
   .donut-wrap { flex-direction: column; }
   .donut-canvas { width: 160px; height: 160px; }
+  .io-grid { grid-template-columns: 1fr; }
 }

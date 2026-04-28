@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Chart as ChartJS, ArcElement, Tooltip as CJTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
@@ -179,6 +179,65 @@ export default function App() {
     showToast(v > 0 ? "Salariu configurat cu succes" : "Salariu eliminat");
   };
 
+  // ══════════════════════════════════════════════════════════════
+  // EXPORT FUNCTIONS
+  // ══════════════════════════════════════════════════════════════
+
+  const download = (content, filename, type) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = filename;
+    a.click();
+  };
+
+  const exportCSV = () => {
+    const header = ["Dată", "Sumă (MDL)", "Categorie ID", "Categorie Nume", "Descriere"];
+    const rows = expenses.map(e => {
+      const cat = DEFAULT_CATEGORIES.find(c => c.id === e.category);
+      return [
+        e.date,
+        e.amount.toFixed(2),
+        e.category,
+        `"${cat?.name || e.category}"`,
+        `"${e.description || ""}"`,
+      ];
+    });
+    const csv = [header.join(","), ...rows.map(r => r.join(","))].join("\n");
+    download(csv, "registru-cheltuieli.csv", "text/csv");
+    showToast("Export CSV finalizat");
+  };
+
+  const exportLLM = () => {
+    const monthStats = {};
+    expenses.forEach(e => {
+      const m = e.date.slice(0, 7);
+      if (!monthStats[m]) monthStats[m] = { total: 0, count: 0 };
+      monthStats[m].total += e.amount;
+      monthStats[m].count++;
+    });
+    const lines = [
+      "# Registru Cheltuieli — Export Text",
+      `Generat: ${new Date().toLocaleString("ro-RO")}`,
+      `Total înregistrări: ${expenses.length}`,
+      "",
+      "## Categorii",
+      ...DEFAULT_CATEGORIES.map(c => `- [${c.id}] ${c.name}`),
+      "",
+      "## Cheltuieli (dată | sumă MDL | categorie_id | descriere)",
+      ...expenses
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(e => `${e.date} | ${e.amount.toFixed(2)} | ${e.category} | ${e.description || ""}`),
+      "",
+      "## Sumar Lunar",
+      ...Object.entries(monthStats)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([m, d]) => `${m}: ${d.total.toFixed(2)} MDL (${d.count} înregistrări)`),
+    ];
+    download(lines.join("\n"), "registru-cheltuieli-llm.txt", "text/plain");
+    showToast("Export LLM text finalizat");
+  };
+
   if (!isLoaded) return null;
 
   return (
@@ -200,7 +259,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Dashboard View */}
+      {/* ═══════════ DASHBOARD ═══════════ */}
       {view === "sinteza" && (
         <main className="fade-in">
           <div className="summary-grid">
@@ -331,7 +390,7 @@ export default function App() {
         </main>
       )}
 
-      {/* Jurnal View */}
+      {/* ═══════════ JURNAL ═══════════ */}
       {view === "jurnal" && (
         <main className="fade-in">
           <div className="controls">
@@ -386,7 +445,41 @@ export default function App() {
         </main>
       )}
 
-      {/* Modal Add */}
+      {/* ═══════════ IMPORT / EXPORT ═══════════ */}
+      {view === "io" && (
+        <main className="fade-in">
+          <div className="io-section">
+            <div className="io-section-label">Export Date</div>
+            <div className="io-grid">
+              <div className="io-card" onClick={exportCSV}>
+                <div className="io-icon">📊</div>
+                <div className="io-card-name">CSV</div>
+                <div className="io-card-desc">Excel / Google Sheets</div>
+              </div>
+              <div className="io-card" onClick={exportLLM}>
+                <div className="io-icon">📝</div>
+                <div className="io-card-name">Text LLM</div>
+                <div className="io-card-desc">Paste în orice asistent AI</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="io-divider" />
+
+          <div className="io-section">
+            <div className="io-section-label">Import Date</div>
+            <p className="io-hint">
+              Formate acceptate: <strong>CSV</strong> (coloane: dată, sumă, categorie_id, categorie_nume, descriere)
+              sau <strong>Text LLM</strong> (format pipe: <code>dată | sumă | categorie_id | descriere</code>).
+            </p>
+            <p style={{ color: "var(--muted)", fontSize: "13px", textAlign: "center" }}>
+              Funcționalitatea de import va fi disponibilă în următorul update.
+            </p>
+          </div>
+        </main>
+      )}
+
+      {/* ═══════════ MODALS ═══════════ */}
       {showAdd && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
           <div className="modal-box">
@@ -417,7 +510,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Salary */}
       {showSalary && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSalary(false)}>
           <div className="modal-box">
