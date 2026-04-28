@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Chart as ChartJS, ArcElement, Tooltip as CJTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
@@ -52,6 +52,7 @@ export default function App() {
     amount: "", category: "food", description: ""
   });
   const [toast, setToast] = useState(null);
+  const fileRef = useRef();
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -180,7 +181,7 @@ export default function App() {
   };
 
   // ══════════════════════════════════════════════════════════════
-  // EXPORT FUNCTIONS
+  // EXPORT
   // ══════════════════════════════════════════════════════════════
 
   const download = (content, filename, type) => {
@@ -236,6 +237,67 @@ export default function App() {
     ];
     download(lines.join("\n"), "registru-cheltuieli-llm.txt", "text/plain");
     showToast("Export LLM text finalizat");
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // IMPORT
+  // ══════════════════════════════════════════════════════════════
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target.result;
+      if (file.name.endsWith(".csv")) importCSV(text);
+      else importLLM(text);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const importCSV = (text) => {
+    const lines = text.trim().split("\n").slice(1);
+    const imported = lines
+      .map(line => {
+        const parts = line.split(",");
+        return {
+          id: uid(),
+          date: parts[0]?.trim(),
+          amount: parseFloat(parts[1]),
+          category: parts[2]?.trim() || "other",
+          description: (parts[4] || parts[3] || "").replace(/^"|"$/g, "").trim(),
+        };
+      })
+      .filter(e => e.date && !isNaN(e.amount));
+    if (!imported.length) { showToast("Nicio înregistrare validă găsită în fișier"); return; }
+    setExpenses(prev => [...prev, ...imported]);
+    showToast(`${imported.length} înregistrări importate din CSV`);
+  };
+
+  const importLLM = (text) => {
+    let inExpenses = false;
+    const imported = [];
+    for (const line of text.split("\n")) {
+      if (line.startsWith("## Cheltuieli") || line.startsWith("## Expenses")) {
+        inExpenses = true; continue;
+      }
+      if (line.startsWith("## ") && inExpenses) { inExpenses = false; continue; }
+      if (inExpenses && line.includes("|")) {
+        const parts = line.split("|").map(p => p.trim());
+        const entry = {
+          id: uid(),
+          date: parts[0],
+          amount: parseFloat(parts[1]),
+          category: parts[2] || "other",
+          description: parts[3] || "",
+        };
+        if (entry.date && !isNaN(entry.amount)) imported.push(entry);
+      }
+    }
+    if (!imported.length) { showToast("Format nerecunoscut sau fără date valide"); return; }
+    setExpenses(prev => [...prev, ...imported]);
+    showToast(`${imported.length} înregistrări importate din text`);
   };
 
   if (!isLoaded) return null;
@@ -472,9 +534,11 @@ export default function App() {
               Formate acceptate: <strong>CSV</strong> (coloane: dată, sumă, categorie_id, categorie_nume, descriere)
               sau <strong>Text LLM</strong> (format pipe: <code>dată | sumă | categorie_id | descriere</code>).
             </p>
-            <p style={{ color: "var(--muted)", fontSize: "13px", textAlign: "center" }}>
-              Funcționalitatea de import va fi disponibilă în următorul update.
-            </p>
+
+            <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFile} style={{ display: "none" }} />
+            <button className="btn-upload" onClick={() => fileRef.current?.click()}>
+              ↑ Încarcă fișier — .csv sau .txt
+            </button>
           </div>
         </main>
       )}

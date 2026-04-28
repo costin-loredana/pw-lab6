@@ -192,6 +192,15 @@ tr:hover .del-btn { opacity: 1; color: #ef4444; }
   height: 1px; background: var(--border); margin: 32px 0;
 }
 
+.btn-upload {
+  display: block; width: 100%; padding: 14px;
+  background: transparent; border: 1px dashed var(--border);
+  color: var(--muted); font-size: 13px; font-weight: 600;
+  cursor: pointer; border-radius: 4px; transition: .2s;
+  font-family: 'Inter', sans-serif;
+}
+.btn-upload:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
