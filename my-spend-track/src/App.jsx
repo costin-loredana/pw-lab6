@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Chart as ChartJS, ArcElement, Tooltip as CJTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
 import "./App.css";
@@ -397,16 +397,54 @@ export default function App() {
             <div className="card chart-area">
               <div className="card-label">Evoluție Flux Financiar (6 luni)</div>
               <div style={{ width: "100%", height: 220, marginTop: 16 }}>
-                <ResponsiveContainer>
-                  <BarChart data={chartData}>
-                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted)" }} dy={10} />
-                    <YAxis hide domain={[0, "auto"]} />
-                    <Tooltip
-                      cursor={{ fill: "var(--stripe)" }}
-                      contentStyle={{ borderRadius: 0, border: "1px solid var(--border)", fontFamily: "Inter" }}
-                      formatter={(v) => [v.toLocaleString("ro-MD", { minimumFractionDigits: 2 }) + " MDL", "Total"]}
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+                    {/* Definim un gradient pentru un look modern */}
+                    <defs>
+                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={theme === "dark" ? "#818cf8" : "#4f46e5"} stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor={theme === "dark" ? "#818cf8" : "#4f46e5"} stopOpacity={0.1}/>
+                      </linearGradient>
+                    </defs>
+
+                    {/* Grilaj discret pentru a evidenția valorile, fără a încărca vizual */}
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                    
+                    <XAxis 
+                      dataKey="label" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 12, fill: "var(--muted)", fontWeight: 500 }} 
+                      dy={10} 
                     />
-                    <Bar dataKey="total" fill="var(--text)" barSize={42} radius={[2, 2, 0, 0]} />
+                    
+                    <YAxis 
+                      hide={false} 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fill: "var(--muted)" }}
+                    />
+
+                    <Tooltip
+                      cursor={{ fill: theme === "dark" ? "#ffffff0a" : "#00000005" }}
+                      contentStyle={{ 
+                        borderRadius: "8px", 
+                        border: "none", 
+                        boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                        backgroundColor: theme === "dark" ? "#1e293b" : "#ffffff",
+                        padding: "10px"
+                      }}
+                      itemStyle={{ color: theme === "dark" ? "#f8fafc" : "#1e293b", fontWeight: "bold" }}
+                      formatter={(v) => [formatCurrency(v), "Total"]}
+                    />
+
+                    <Bar 
+                      dataKey="total" 
+                      fill="url(#barGradient)" 
+                      barSize={32} 
+                      radius={[6, 6, 0, 0]} 
+                      animationDuration={1500}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
