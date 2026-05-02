@@ -56,30 +56,37 @@ function saveDatabase() {
     const data = { expenses, categories, salary: salaryConfig };
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf8");
   } catch (err) {
-    console.error("❌ Error saving database:", err.message);
+    console.error(" Error saving database:", err.message);
   }
 }
 
+// ─── Initialize Database ─────────────────────────────────────
 const db = loadDatabase();
 let expenses = db.expenses;
 let categories = db.categories;
 let salaryConfig = db.salary;
 
+// ─── Helpers ─────────────────────────────────────────────────
 function uid() { 
   return Math.random().toString(36).slice(2) + Date.now().toString(36); 
 }
 
+// ─── Role & Permission Config ─────────────────────────────────
 const ROLE_PERMISSIONS = {
   ADMIN:   ["READ", "WRITE", "DELETE"],
   WRITER:  ["READ", "WRITE"],
   VISITOR: ["READ"],
 };
 
+// ─── JWT Middleware ───────────────────────────────────────────
 function auth(requiredPermission) {
   return (req, res, next) => {
     const header = req.headers.authorization;
     if (!header || !header.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing Authorization header" });
+      return res.status(401).json({ 
+        error: "Missing Authorization header",
+        hint: "Use: Authorization: Bearer <your-token>"
+      });
     }
     
     const token = header.slice(7);
@@ -105,17 +112,20 @@ function auth(requiredPermission) {
   };
 }
 
-// ─── Root ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  AUTH - Token
+// ═══════════════════════════════════════════════════════════════
+
 app.get("/", (req, res) => {
   res.json({ 
     message: "Finance Tracker API", 
     version: "3.0.0",
-    stage: "Expenses CRUD",
+    stage: "Full CRUD Operations",
     storage: "JSON File (persistent)",
+    endpoints: ["/token", "/expenses", "/categories", "/salary", "/stats"]
   });
 });
 
-// ─── Token ───────────────────────────────────────────────────
 app.post("/token", (req, res) => {
   const { role, permissions } = req.body || {};
   
@@ -125,7 +135,12 @@ app.post("/token", (req, res) => {
       JWT_SECRET,
       { expiresIn: "60s" }
     );
-    return res.json({ token, expiresIn: 60, role, permissions: ROLE_PERMISSIONS[role] });
+    return res.json({
+      token,
+      expiresIn: 60,
+      role,
+      permissions: ROLE_PERMISSIONS[role],
+    });
   }
   
   if (Array.isArray(permissions)) {
@@ -133,47 +148,69 @@ app.post("/token", (req, res) => {
     return res.json({ token, expiresIn: 60, permissions });
   }
   
-  res.status(400).json({ error: "Provide 'role' or 'permissions'" });
+  res.status(400).json({
+    error: "Provide 'role' (ADMIN|WRITER|VISITOR) or 'permissions' array",
+    example: { role: "ADMIN" },
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
-//  EXPENSES CRUD + STATS
+//  EXPENSES - Full CRUD
 // ═══════════════════════════════════════════════════════════════
 
-// GET /expenses
+// GET /expenses — List all expenses
 app.get("/expenses", auth("READ"), (req, res) => {
   res.json(expenses);
 });
 
-// GET /expenses/:id
+// GET /expenses/:id — Get single expense
 app.get("/expenses/:id", auth("READ"), (req, res) => {
   const exp = expenses.find(e => e.id === req.params.id);
   if (!exp) return res.status(404).json({ error: "Expense not found" });
   res.json(exp);
 });
 
-// POST /expenses
+// POST /expenses — Create new expense
 app.post("/expenses", auth("WRITE"), (req, res) => {
   const { date, amount, category, description } = req.body;
   
+  // Validation
   if (!date || !amount || !category) {
-    return res.status(400).json({ error: "Fields 'date', 'amount', 'category' are required" });
+    return res.status(400).json({ 
+      error: "Missing required fields",
+      required: ["date", "amount", "category"]
+    });
   }
+  
   if (isNaN(+amount) || +amount <= 0) {
     return res.status(400).json({ error: "Amount must be a positive number" });
   }
+  
   if (!categories.find(c => c.id === category)) {
-    return res.status(400).json({ error: `Category '${category}' does not exist` });
+    return res.status(400).json({ 
+      error: `Category '${category}' does not exist`,
+      availableCategories: categories.map(c => c.id)
+    });
   }
   
-  const newExpense = { id: uid(), date, amount: +amount, category, description: description || "" };
+  const newExpense = {
+    id: uid(),
+    date,
+    amount: +amount,
+    category,
+    description: description || ""
+  };
+  
   expenses.unshift(newExpense);
   saveDatabase();
   
-  res.status(201).json({ message: "Expense created", expense: newExpense });
+  res.status(201).json({
+    message: "Expense created successfully",
+    expense: newExpense
+  });
 });
 
-// PUT /expenses/:id
+// PUT /expenses/:id — Update expense
 app.put("/expenses/:id", auth("WRITE"), (req, res) => {
   const idx = expenses.findIndex(e => e.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Expense not found" });
@@ -183,6 +220,7 @@ app.put("/expenses/:id", auth("WRITE"), (req, res) => {
   if (amount !== undefined && (isNaN(+amount) || +amount <= 0)) {
     return res.status(400).json({ error: "Amount must be a positive number" });
   }
+  
   if (category && !categories.find(c => c.id === category)) {
     return res.status(400).json({ error: `Category '${category}' does not exist` });
   }
@@ -194,29 +232,160 @@ app.put("/expenses/:id", auth("WRITE"), (req, res) => {
     ...(category !== undefined && { category }),
     ...(description !== undefined && { description }),
   };
+  
   saveDatabase();
   
-  res.json({ message: "Expense updated", expense: expenses[idx] });
+  res.json({
+    message: "Expense updated successfully",
+    expense: expenses[idx]
+  });
 });
 
-// DELETE /expenses/:id
+// DELETE /expenses/:id — Delete expense
 app.delete("/expenses/:id", auth("DELETE"), (req, res) => {
   const idx = expenses.findIndex(e => e.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Expense not found" });
   
+  const deletedExpense = expenses[idx];
   expenses.splice(idx, 1);
   saveDatabase();
   
-  res.json({ message: "Expense deleted successfully" });
+  res.json({
+    message: "Expense deleted successfully",
+    expense: deletedExpense
+  });
 });
 
-// GET /categories (read-only for now)
+// ═══════════════════════════════════════════════════════════════
+//  CATEGORIES - Full CRUD
+// ═══════════════════════════════════════════════════════════════
+
+// GET /categories — List all categories with expense counts
 app.get("/categories", auth("READ"), (req, res) => {
   const withCounts = categories.map(c => ({
     ...c,
     expenseCount: expenses.filter(e => e.category === c.id).length,
   }));
   res.json(withCounts);
+});
+
+// GET /categories/:id — Get single category
+app.get("/categories/:id", auth("READ"), (req, res) => {
+  const cat = categories.find(c => c.id === req.params.id);
+  if (!cat) return res.status(404).json({ error: "Category not found" });
+  
+  res.json({
+    ...cat,
+    expenseCount: expenses.filter(e => e.category === cat.id).length,
+  });
+});
+
+// POST /categories — Create new category
+app.post("/categories", auth("WRITE"), (req, res) => {
+  const { name, color } = req.body;
+  
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Category name is required" });
+  }
+  
+  const id = name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  
+  if (categories.find(c => c.id === id)) {
+    return res.status(409).json({ 
+      error: `Category with id '${id}' already exists`,
+      suggestion: "Choose a different name"
+    });
+  }
+  
+  const newCategory = {
+    id,
+    name: name.trim(),
+    color: color || "#9e9e9e"
+  };
+  
+  categories.push(newCategory);
+  saveDatabase();
+  
+  res.status(201).json({
+    message: "Category created successfully",
+    category: newCategory
+  });
+});
+
+// PUT /categories/:id — Update category
+app.put("/categories/:id", auth("WRITE"), (req, res) => {
+  const idx = categories.findIndex(c => c.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Category not found" });
+  
+  const { name, color } = req.body;
+  
+  if (name !== undefined && !name.trim()) {
+    return res.status(400).json({ error: "Name cannot be empty" });
+  }
+  
+  categories[idx] = {
+    ...categories[idx],
+    ...(name !== undefined && { name: name.trim() }),
+    ...(color !== undefined && { color }),
+  };
+  
+  saveDatabase();
+  
+  res.json({
+    message: "Category updated successfully",
+    category: categories[idx]
+  });
+});
+
+// DELETE /categories/:id — Delete category
+app.delete("/categories/:id", auth("DELETE"), (req, res) => {
+  if (req.params.id === "other") {
+    return res.status(400).json({ error: "The 'other' category cannot be deleted" });
+  }
+  
+  const idx = categories.findIndex(c => c.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Category not found" });
+  
+  const expenseCount = expenses.filter(e => e.category === req.params.id).length;
+  if (expenseCount > 0) {
+    return res.status(409).json({
+      error: `Category has ${expenseCount} associated expenses`,
+      solution: "Reassign or delete expenses first"
+    });
+  }
+  
+  const deletedCategory = categories[idx];
+  categories.splice(idx, 1);
+  saveDatabase();
+  
+  res.json({
+    message: "Category deleted successfully",
+    category: deletedCategory
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  SALARY
+// ═══════════════════════════════════════════════════════════════
+
+app.get("/salary", auth("READ"), (req, res) => {
+  res.json(salaryConfig);
+});
+
+app.put("/salary", auth("WRITE"), (req, res) => {
+  const { amount } = req.body;
+  
+  if (amount !== null && amount !== undefined && (isNaN(+amount) || +amount < 0)) {
+    return res.status(400).json({ error: "Amount must be a non-negative number or null" });
+  }
+  
+  salaryConfig.amount = amount !== null && amount !== undefined ? +amount : null;
+  saveDatabase();
+  
+  res.json({
+    message: "Salary updated successfully",
+    salary: salaryConfig
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -243,14 +412,36 @@ app.get("/stats", auth("READ"), (req, res) => {
   res.json({
     totalExpenses: expenses.length,
     totalAmount: total,
-    currentMonth: { month: curMonth, total: curMonthTotal, count: curMonthExpenses.length },
+    currentMonth: {
+      month: curMonth,
+      total: curMonthTotal,
+      count: curMonthExpenses.length
+    },
     byCategory,
     byMonth,
+    salary: salaryConfig.amount,
+    remaining: salaryConfig.amount !== null ? salaryConfig.amount - curMonthTotal : null,
   });
 });
 
 // ─── Start Server ────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n Server running at http://localhost:${PORT}`);
-  console.log(` Stage 3-1: Expenses CRUD + Stats Ready!\n`);
+  console.log(` Database: ${DB_PATH}`);
+  console.log(` Total expenses: ${expenses.length}`);
+  console.log(` Categories: ${categories.length}`);
+  console.log(` Token: POST http://localhost:${PORT}/token`);
+  console.log(`\n Stage 3: Full CRUD Operations Ready!\n`);
+  console.log(` Endpoints:`);
+  console.log(`   GET    /expenses`);
+  console.log(`   POST   /expenses`);
+  console.log(`   PUT    /expenses/:id`);
+  console.log(`   DELETE /expenses/:id`);
+  console.log(`   GET    /categories`);
+  console.log(`   POST   /categories`);
+  console.log(`   PUT    /categories/:id`);
+  console.log(`   DELETE /categories/:id`);
+  console.log(`   GET    /salary`);
+  console.log(`   PUT    /salary`);
+  console.log(`   GET    /stats\n`);
 });
