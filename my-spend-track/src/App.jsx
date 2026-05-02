@@ -6,7 +6,7 @@ import "./App.css";
 
 ChartJS.register(ArcElement, CJTooltip, Legend);
 
-const STORAGE_KEY = "registru_finante_editorial_v5";
+const STORAGE_KEY = "registru_finante_editorial_v6";
 
 const DEFAULT_CATEGORIES = [
   { id: "food", name: "Alimentație & Produse", color: "#2e7d32" },
@@ -23,16 +23,33 @@ const DONUT_COLORS = [
   "#3b82f6", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316",
 ];
 
-const SAMPLE_DATA = [
-  { id: "1", date: "2026-03-15", amount: 1200.00, category: "shopping", description: "Monitor nou" },
-  { id: "2", date: "2026-04-01", amount: 7500.00, category: "housing", description: "Chirie apartament" },
-  { id: "3", date: "2026-04-05", amount: 485.50, category: "food", description: "Cumpărături săptămânale" },
-  { id: "4", date: "2026-04-10", amount: 120.00, category: "transport", description: "Alimentare rezervor" },
-  { id: "5", date: "2026-04-12", amount: 320.00, category: "health", description: "Consultație + medicamente" },
-  { id: "6", date: "2026-04-18", amount: 210.00, category: "entertainment", description: "Cinema & restaurant" },
-  { id: "7", date: "2026-03-28", amount: 890.00, category: "food", description: "Cumpărături lunare" },
-  { id: "8", date: "2026-03-20", amount: 450.00, category: "transport", description: "Revizie mașină" },
-];
+const CSV_EXAMPLE = `Dată,Sumă (MDL),Categorie ID,Categorie Nume,Descriere
+2026-04-01,7500.00,housing,"Chirie & Servicii Comunale","Chirie apartament Aprilie"
+2026-04-05,485.50,food,"Alimentație & Produse","Cumpărături săptămânale"
+2026-04-10,120.00,transport,"Transport & Combustibil","Alimentare combustibil"
+2026-04-12,320.00,health,"Sănătate & Farmacie","Consultație medicală"
+2026-04-18,210.00,entertainment,"Timp Liber & Cultură","Cinema & restaurant"`;
+
+const LLM_EXAMPLE = `# Registru Cheltuieli — Export Text
+Generat: ${new Date().toLocaleString("ro-RO")}
+Total înregistrări: 5
+
+## Categorii
+- [food] Alimentație & Produse
+- [transport] Transport & Combustibil
+- [housing] Chirie & Servicii Comunale
+- [health] Sănătate & Farmacie
+- [entertainment] Timp Liber & Cultură
+
+## Cheltuieli (dată | sumă MDL | categorie_id | descriere)
+2026-04-01 | 7500.00 | housing | Chirie apartament Aprilie
+2026-04-05 | 485.50 | food | Cumpărături săptămânale
+2026-04-10 | 120.00 | transport | Alimentare combustibil
+2026-04-12 | 320.00 | health | Consultație medicală
+2026-04-18 | 210.00 | entertainment | Cinema & restaurant
+
+## Sumar Lunar
+2026-04: 8635.50 MDL (5 înregistrări)`;
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -41,41 +58,52 @@ export default function App() {
   const [theme, setTheme] = useState("light");
   const [view, setView] = useState("sinteza");
   const [expenses, setExpenses] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [salary, setSalary] = useState(null);
   const [filterCat, setFilterCat] = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [showSalary, setShowSalary] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [salaryInput, setSalaryInput] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [newExp, setNewExp] = useState({
     date: new Date().toISOString().slice(0, 10),
     amount: "", category: "food", description: ""
   });
+  const [newCategory, setNewCategory] = useState({ name: "", color: "#6366f1" });
+  const [editingCategory, setEditingCategory] = useState(null);
   const [toast, setToast] = useState(null);
+  const [toastType, setToastType] = useState("success");
+  const [copiedExample, setCopiedExample] = useState(null);
   const fileRef = useRef();
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      setExpenses(d.expenses || SAMPLE_DATA);
+      setExpenses(d.expenses || []);
+      setCategories(d.categories || DEFAULT_CATEGORIES);
       setTheme(d.theme || "light");
       setSalary(d.salary || null);
-    } else {
-      setExpenses(SAMPLE_DATA);
     }
     setIsLoaded(true);
   }, []);
 
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ expenses, theme, salary }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ expenses, categories, theme, salary }));
       document.body.className = theme === "dark" ? "dark-theme" : "";
     }
-  }, [expenses, theme, salary, isLoaded]);
+  }, [expenses, categories, theme, salary, isLoaded]);
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  const showToast = (msg, type = "success") => { 
+    setToast(msg); 
+    setToastType(type);
+    setTimeout(() => setToast(null), 3000); 
+  };
+  
   const formatCurrency = (val) => val.toLocaleString("ro-MD", { minimumFractionDigits: 2 }) + " MDL";
 
   const monthsList = useMemo(() =>
@@ -113,9 +141,9 @@ export default function App() {
     });
     const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
     if (!sorted.length) return null;
-    const cat = DEFAULT_CATEGORIES.find(c => c.id === sorted[0][0]);
+    const cat = categories.find(c => c.id === sorted[0][0]);
     return { cat, total: sorted[0][1] };
-  }, [curMonthExpenses]);
+  }, [curMonthExpenses, categories]);
 
   const donutData = useMemo(() => {
     const totals = {};
@@ -124,8 +152,8 @@ export default function App() {
     });
     return Object.entries(totals)
       .sort((a, b) => b[1] - a[1])
-      .map(([id, total]) => ({ id, total, cat: DEFAULT_CATEGORIES.find(c => c.id === id) }));
-  }, [curMonthExpenses]);
+      .map(([id, total]) => ({ id, total, cat: categories.find(c => c.id === id) }));
+  }, [curMonthExpenses, categories]);
 
   const donutChartData = {
     labels: donutData.map(d => d.cat?.name || d.id),
@@ -170,9 +198,66 @@ export default function App() {
   const salaryPct = salary ? Math.min(100, Math.round(curMonthTotal / salary * 100)) : null;
   const remaining = salary ? salary - curMonthTotal : null;
 
+  // ═══════════════════════════════════
+  // CATEGORY MANAGEMENT
+  // ═══════════════════════════════════
+  
+  const addCategory = () => {
+    if (!newCategory.name.trim()) {
+      showToast("Numele categoriei este obligatoriu", "error");
+      return;
+    }
+    const id = newCategory.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    if (categories.find(c => c.id === id)) {
+      showToast("Există deja o categorie cu acest nume", "error");
+      return;
+    }
+    setCategories(prev => [...prev, { id, name: newCategory.name, color: newCategory.color }]);
+    setNewCategory({ name: "", color: "#6366f1" });
+    showToast("Categorie adăugată cu succes");
+  };
+
+  const editCategory = (catId) => {
+    const cat = categories.find(c => c.id === catId);
+    if (!cat) return;
+    setEditingCategory(catId);
+    setNewCategory({ name: cat.name, color: cat.color });
+  };
+
+  const saveCategoryEdit = () => {
+    if (!newCategory.name.trim()) {
+      showToast("Numele categoriei este obligatoriu", "error");
+      return;
+    }
+    setCategories(prev => prev.map(c => 
+      c.id === editingCategory ? { ...c, name: newCategory.name, color: newCategory.color } : c
+    ));
+    setEditingCategory(null);
+    setNewCategory({ name: "", color: "#6366f1" });
+    showToast("Categorie actualizată");
+  };
+
+  const deleteCategory = (catId) => {
+    if (catId === "other") {
+      showToast("Categoria 'Diverse' nu poate fi ștearsă", "error");
+      return;
+    }
+    if (expenses.some(e => e.category === catId)) {
+      showToast("Există cheltuieli asociate acestei categorii. Mutați-le mai întâi.", "error");
+      return;
+    }
+    if (!window.confirm("Sigur doriți să ștergeți această categorie?")) return;
+    setCategories(prev => prev.filter(c => c.id !== catId));
+    showToast("Categorie ștearsă");
+  };
+
+  // ═══════════════════════════════════
+  // EXPENSE MANAGEMENT
+  // ═══════════════════════════════════
+
   const addExpense = () => {
-    if (!newExp.amount || isNaN(+newExp.amount)) {
-      showToast("Introduceți o sumă validă");
+    if (!newExp.amount || isNaN(+newExp.amount) || +newExp.amount <= 0) {
+      showToast("Introduceți o sumă validă și mai mare decât 0", "error");
       return;
     }
     setExpenses(prev => [{ ...newExp, id: uid(), amount: +newExp.amount }, ...prev]);
@@ -181,10 +266,43 @@ export default function App() {
     showToast("Tranzacție salvată în registru");
   };
 
+  const editExpense = (expense) => {
+    setEditingExpense(expense.id);
+    setNewExp({
+      date: expense.date,
+      amount: expense.amount.toString(),
+      category: expense.category,
+      description: expense.description
+    });
+    setShowAdd(true);
+  };
+
+  const saveEditExpense = () => {
+    if (!newExp.amount || isNaN(+newExp.amount) || +newExp.amount <= 0) {
+      showToast("Introduceți o sumă validă", "error");
+      return;
+    }
+    setExpenses(prev => prev.map(e => 
+      e.id === editingExpense 
+        ? { ...e, ...newExp, amount: +newExp.amount }
+        : e
+    ));
+    setShowAdd(false);
+    setEditingExpense(null);
+    setNewExp({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
+    showToast("Tranzacție actualizată");
+  };
+
+  const deleteExpense = (id) => {
+    if (!window.confirm("Sigur doriți să ștergeți această tranzacție?")) return;
+    setExpenses(prev => prev.filter(i => i.id !== id));
+    showToast("Tranzacție ștearsă");
+  };
+
   const saveSalary = () => {
     const v = +salaryInput;
     if (v < 0) {
-      showToast("Introduceți un salariu valid");
+      showToast("Introduceți un salariu valid", "error");
       return;
     }
     setSalary(v > 0 ? v : null);
@@ -192,9 +310,9 @@ export default function App() {
     showToast(v > 0 ? "Salariu configurat cu succes" : "Salariu eliminat");
   };
 
-  // ══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════
   // EXPORT
-  // ══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════
 
   const download = (content, filename, type) => {
     const a = document.createElement("a");
@@ -206,7 +324,7 @@ export default function App() {
   const exportCSV = () => {
     const header = ["Dată", "Sumă (MDL)", "Categorie ID", "Categorie Nume", "Descriere"];
     const rows = expenses.map(e => {
-      const cat = DEFAULT_CATEGORIES.find(c => c.id === e.category);
+      const cat = categories.find(c => c.id === e.category);
       return [
         e.date,
         e.amount.toFixed(2),
@@ -234,7 +352,7 @@ export default function App() {
       `Total înregistrări: ${expenses.length}`,
       "",
       "## Categorii",
-      ...DEFAULT_CATEGORIES.map(c => `- [${c.id}] ${c.name}`),
+      ...categories.map(c => `- [${c.id}] ${c.name}`),
       "",
       "## Cheltuieli (dată | sumă MDL | categorie_id | descriere)",
       ...expenses
@@ -251,9 +369,27 @@ export default function App() {
     showToast("Export LLM text finalizat");
   };
 
-  // ══════════════════════════════════════════════════════════════
+  const downloadExample = (type) => {
+    if (type === 'csv') {
+      download(CSV_EXAMPLE, "exemplu-import.csv", "text/csv");
+      showToast("Exemplu CSV descărcat");
+    } else {
+      download(LLM_EXAMPLE, "exemplu-import-llm.txt", "text/plain");
+      showToast("Exemplu LLM descărcat");
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedExample(text === CSV_EXAMPLE ? 'csv' : 'llm');
+      showToast("Text copiat în clipboard");
+      setTimeout(() => setCopiedExample(null), 2000);
+    });
+  };
+
+  // ═══════════════════════════════════
   // IMPORT
-  // ══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -270,30 +406,54 @@ export default function App() {
 
   const importCSV = (text) => {
     const lines = text.trim().split("\n").slice(1);
+    let successCount = 0;
+    let errorCount = 0;
+    
     const imported = lines
       .map(line => {
         const parts = line.split(",");
-        return {
-          id: uid(),
-          date: parts[0]?.trim(),
-          amount: parseFloat(parts[1]),
-          category: parts[2]?.trim() || "other",
-          description: (parts[4] || parts[3] || "").replace(/^"|"$/g, "").trim(),
-        };
+        const date = parts[0]?.trim();
+        const amount = parseFloat(parts[1]);
+        const category = parts[2]?.trim() || "other";
+        const description = (parts[4] || parts[3] || "").replace(/^"|"$/g, "").trim();
+        
+        if (!date || isNaN(amount) || amount <= 0) {
+          errorCount++;
+          return null;
+        }
+        
+        const catExists = categories.find(c => c.id === category);
+        if (!catExists) {
+          errorCount++;
+          return null;
+        }
+        
+        successCount++;
+        return { id: uid(), date, amount, category, description };
       })
-      .filter(e => e.date && !isNaN(e.amount));
-    if (!imported.length) { showToast("Nicio înregistrare validă găsită în fișier"); return; }
-    setExpenses(prev => {
-      const existingIds = new Set(prev.map(e => e.id));
-      return [...prev, ...imported.filter(e => !existingIds.has(e.id))];
-    });
+      .filter(e => e !== null);
+    
+    if (!imported.length) { 
+      showToast("Nicio înregistrare validă găsită în fișier", "error"); 
+      return; 
+    }
+    
+    setExpenses(prev => [...prev, ...imported]);
     setPasteText("");
-    showToast(`${imported.length} înregistrări importate din CSV`);
+    
+    if (errorCount > 0) {
+      showToast(`${successCount} înregistrări importate cu succes, ${errorCount} erori (format sau categorie invalidă)`, "warning");
+    } else {
+      showToast(`${successCount} înregistrări importate cu succes din CSV`, "success");
+    }
   };
 
   const importLLM = (text) => {
     let inExpenses = false;
+    let successCount = 0;
+    let errorCount = 0;
     const imported = [];
+    
     for (const line of text.split("\n")) {
       if (line.startsWith("## Cheltuieli") || line.startsWith("## Expenses")) {
         inExpenses = true; continue;
@@ -308,21 +468,41 @@ export default function App() {
           category: parts[2] || "other",
           description: parts[3] || "",
         };
-        if (entry.date && !isNaN(entry.amount)) imported.push(entry);
+        
+        if (!entry.date || isNaN(entry.amount) || entry.amount <= 0) {
+          errorCount++;
+          continue;
+        }
+        
+        const catExists = categories.find(c => c.id === entry.category);
+        if (!catExists) {
+          errorCount++;
+          continue;
+        }
+        
+        successCount++;
+        imported.push(entry);
       }
     }
-    if (!imported.length) { showToast("Format nerecunoscut sau fără date valide"); return; }
-    setExpenses(prev => {
-      const existingIds = new Set(prev.map(e => e.id));
-      return [...prev, ...imported.filter(e => !existingIds.has(e.id))];
-    });
+    
+    if (!imported.length) { 
+      showToast("Format nerecunoscut sau fără date valide. Verificați exemplul de format.", "error"); 
+      return; 
+    }
+    
+    setExpenses(prev => [...prev, ...imported]);
     setPasteText("");
-    showToast(`${imported.length} înregistrări importate din text`);
+    
+    if (errorCount > 0) {
+      showToast(`${successCount} înregistrări importate cu succes, ${errorCount} erori (format sau categorie invalidă)`, "warning");
+    } else {
+      showToast(`${successCount} înregistrări importate cu succes din text`, "success");
+    }
   };
 
   const importPasted = () => {
     if (!pasteText.trim()) {
-      showToast("Lipiți textul cu date pentru import");
+      showToast("Lipiți textul cu date pentru import", "error");
       return;
     }
     if (pasteText.includes("|")) importLLM(pasteText);
@@ -336,12 +516,13 @@ export default function App() {
       <header>
         <div className="title-group">
           <p>Sistem de Evidență și Gestiune</p>
-          <h1>{view === "sinteza" ? "Sinteză" : view === "jurnal" ? "Registru" : "Date"}</h1>
+          <h1>{view === "sinteza" ? "Sinteză" : view === "jurnal" ? "Registru" : view === "categorii" ? "Categorii" : "Date"}</h1>
         </div>
         <div className="header-actions">
           <div className="view-switcher">
             <button className={view === "sinteza" ? "active" : ""} onClick={() => setView("sinteza")}>Dashboard</button>
             <button className={view === "jurnal" ? "active" : ""} onClick={() => setView("jurnal")}>Jurnal</button>
+            <button className={view === "categorii" ? "active" : ""} onClick={() => setView("categorii")}>Categorii</button>
             <button className={view === "io" ? "active" : ""} onClick={() => setView("io")}>Date</button>
           </div>
           <button className="btn btn-ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
@@ -399,32 +580,15 @@ export default function App() {
               <div style={{ width: "100%", height: 220, marginTop: 16 }}>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
-                    {/* Definim un gradient pentru un look modern */}
                     <defs>
                       <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={theme === "dark" ? "#818cf8" : "#4f46e5"} stopOpacity={0.8}/>
                         <stop offset="95%" stopColor={theme === "dark" ? "#818cf8" : "#4f46e5"} stopOpacity={0.1}/>
                       </linearGradient>
                     </defs>
-
-                    {/* Grilaj discret pentru a evidenția valorile, fără a încărca vizual */}
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-                    
-                    <XAxis 
-                      dataKey="label" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 12, fill: "var(--muted)", fontWeight: 500 }} 
-                      dy={10} 
-                    />
-                    
-                    <YAxis 
-                      hide={false} 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 10, fill: "var(--muted)" }}
-                    />
-
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted)", fontWeight: 500 }} dy={10} />
+                    <YAxis hide={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} />
                     <Tooltip
                       cursor={{ fill: theme === "dark" ? "#ffffff0a" : "#00000005" }}
                       contentStyle={{ 
@@ -437,14 +601,7 @@ export default function App() {
                       itemStyle={{ color: theme === "dark" ? "#f8fafc" : "#1e293b", fontWeight: "bold" }}
                       formatter={(v) => [formatCurrency(v), "Total"]}
                     />
-
-                    <Bar 
-                      dataKey="total" 
-                      fill="url(#barGradient)" 
-                      barSize={32} 
-                      radius={[6, 6, 0, 0]} 
-                      animationDuration={1500}
-                    />
+                    <Bar dataKey="total" fill="url(#barGradient)" barSize={32} radius={[6, 6, 0, 0]} animationDuration={1500} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -487,6 +644,7 @@ export default function App() {
                     <span className="amt">{formatCurrency(e.amount)}</span>
                   </div>
                 ))}
+                {expenses.length === 0 && <div className="empty-msg">Nicio tranzacție înregistrată</div>}
               </div>
               <button className="btn-text-link" onClick={() => setView("jurnal")}>Deschide Jurnalul Complet →</button>
             </div>
@@ -530,10 +688,10 @@ export default function App() {
               </select>
               <select value={filterCat} onChange={e => setFilterCat(e.target.value)}>
                 <option value="all">Toate categoriile</option>
-                {DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <button className="btn btn-main" onClick={() => setShowAdd(true)}>+ Înregistrare Nouă</button>
+            <button className="btn btn-main" onClick={() => { setEditingExpense(null); setShowAdd(true); }}>+ Înregistrare Nouă</button>
           </div>
 
           <div className="table-container">
@@ -544,12 +702,12 @@ export default function App() {
                   <th className="col-desc">Explicație Tranzacție</th>
                   <th className="col-cat">Categorie</th>
                   <th className="col-amount">Sumă</th>
-                  <th className="col-actions"></th>
+                  <th className="col-actions">Acțiuni</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredExpenses.map(exp => {
-                  const cat = DEFAULT_CATEGORIES.find(c => c.id === exp.category);
+                  const cat = categories.find(c => c.id === exp.category);
                   return (
                     <tr key={exp.id}>
                       <td className="col-date">{exp.date}</td>
@@ -557,12 +715,13 @@ export default function App() {
                       <td className="col-cat">
                         <span className="cat-label">
                           <span className="cat-dot-sm" style={{ background: cat?.color || "#999" }} />
-                          {cat?.name}
+                          {cat?.name || exp.category}
                         </span>
                       </td>
                       <td className="col-amount amount-cell">{formatCurrency(exp.amount)}</td>
                       <td className="col-actions">
-                        <button className="del-btn" onClick={() => setExpenses(prev => prev.filter(i => i.id !== exp.id))}>✕</button>
+                        <button className="edit-btn" onClick={() => editExpense(exp)} title="Editează">✎</button>
+                        <button className="del-btn" onClick={() => deleteExpense(exp.id)} title="Șterge">✕</button>
                       </td>
                     </tr>
                   );
@@ -570,6 +729,56 @@ export default function App() {
               </tbody>
             </table>
             {filteredExpenses.length === 0 && <div className="empty-msg">Nicio înregistrare găsită în arhivă.</div>}
+          </div>
+        </main>
+      )}
+
+      {/* ═══════════ CATEGORII ═══════════ */}
+      {view === "categorii" && (
+        <main className="fade-in">
+          <div className="categories-section">
+            <h2>Gestionare Categorii</h2>
+            
+            <div className="add-category-form">
+              <input
+                type="text"
+                placeholder="Nume categorie nouă"
+                value={newCategory.name}
+                onChange={e => setNewCategory(prev => ({ ...prev, name: e.target.value }))}
+              />
+              <input
+                type="color"
+                value={newCategory.color}
+                onChange={e => setNewCategory(prev => ({ ...prev, color: e.target.value }))}
+              />
+              {editingCategory ? (
+                <button className="btn btn-main" onClick={saveCategoryEdit}>Salvează modificarea</button>
+              ) : (
+                <button className="btn btn-main" onClick={addCategory}>+ Adaugă categorie</button>
+              )}
+              {editingCategory && (
+                <button className="btn btn-ghost" onClick={() => { setEditingCategory(null); setNewCategory({ name: "", color: "#6366f1" }); }}>Anulează editarea</button>
+              )}
+            </div>
+
+            <div className="categories-list">
+              {categories.map(cat => (
+                <div key={cat.id} className="category-item">
+                  <div className="category-info">
+                    <span className="cat-dot-lg" style={{ background: cat.color }} />
+                    <div>
+                      <div className="category-name">{cat.name}</div>
+                      <div className="category-id">ID: {cat.id}</div>
+                    </div>
+                  </div>
+                  <div className="category-actions">
+                    <span className="category-count">{expenses.filter(e => e.category === cat.id).length} tranzacții</span>
+                    <button className="btn-ghost-sm" onClick={() => editCategory(cat.id)}>Editează</button>
+                    {cat.id !== "other" && <button className="btn-ghost-sm delete" onClick={() => deleteCategory(cat.id)}>Șterge</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </main>
       )}
@@ -582,7 +791,7 @@ export default function App() {
             <div className="io-grid">
               <div className="io-card" onClick={exportCSV}>
                 <div className="io-card-name">CSV</div>
-                <div className="io-card-desc">Excel / Google Sheets</div>
+                <div className="io-card-desc">Compatibil Excel / Google Sheets</div>
               </div>
               <div className="io-card" onClick={exportLLM}>
                 <div className="io-card-name">Text LLM</div>
@@ -606,11 +815,11 @@ export default function App() {
             </button>
 
             <div className="field" style={{ marginTop: 20 }}>
-              <label>Sau lipește text direct</label>
+              <label>Lipește text direct</label>
               <textarea
                 value={pasteText}
                 onChange={e => setPasteText(e.target.value)}
-                placeholder={`Exemplu CSV:\n2026-04-01,7500.00,housing,\"Chirie & Servicii Comunale\",\"Chirie apartament\"\n\nExemplu Text LLM:\n## Cheltuieli\n2026-04-01 | 7500.00 | housing | Chirie apartament`}
+                placeholder={`Exemplu CSV:\n2026-04-01,7500.00,housing,"Chirie & Servicii Comunale","Chirie apartament"\n\nExemplu Text LLM:\n## Cheltuieli\n2026-04-01 | 7500.00 | housing | Chirie apartament`}
               />
             </div>
             <button className="btn btn-main" onClick={importPasted} style={{ marginTop: 8 }}>
@@ -620,10 +829,48 @@ export default function App() {
 
           <div className="io-divider" />
 
+          <div className="io-section">
+            <div className="io-section-label">Exemple pentru Import</div>
+
+            <div className="examples-container">
+              <div className="example-box">
+                <div className="example-header">
+                  <h4>Exemplu CSV</h4>
+                  <div className="example-actions">
+                    <button className="btn-ghost-sm" onClick={() => copyToClipboard(CSV_EXAMPLE)}>
+                      {copiedExample === 'csv' ? '✓ Copiat' : 'Copiază text'}
+                    </button>
+                    <button className="btn-ghost-sm" onClick={() => downloadExample('csv')}>
+                      ↓ Descarcă
+                    </button>
+                  </div>
+                </div>
+                <pre className="example-code">{CSV_EXAMPLE}</pre>
+              </div>
+
+              <div className="example-box">
+                <div className="example-header">
+                  <h4>Exemplu Text LLM (Pipe Format)</h4>
+                  <div className="example-actions">
+                    <button className="btn-ghost-sm" onClick={() => copyToClipboard(LLM_EXAMPLE)}>
+                      {copiedExample === 'llm' ? '✓ Copiat' : 'Copiază text'}
+                    </button>
+                    <button className="btn-ghost-sm" onClick={() => downloadExample('llm')}>
+                      ↓ Descarcă
+                    </button>
+                  </div>
+                </div>
+                <pre className="example-code">{LLM_EXAMPLE}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div className="io-divider" />
+
           <div className="io-stats-grid">
             {[
               ["Înregistrări", expenses.length],
-              ["Categorii", DEFAULT_CATEGORIES.length],
+              ["Categorii", categories.length],
               ["Luni", uniqueMonths],
               ["Total", formatCurrency(totalAll)],
             ].map(([label, val]) => (
@@ -640,7 +887,7 @@ export default function App() {
       {showAdd && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
           <div className="modal-box">
-            <h2 className="serif-header">Formular Înregistrare</h2>
+            <h2 className="serif-header">{editingExpense ? 'Editare Tranzacție' : 'Formular Înregistrare'}</h2>
             <div className="field">
               <label>Data</label>
               <input type="date" value={newExp.date} onChange={e => setNewExp(p => ({ ...p, date: e.target.value }))} />
@@ -652,7 +899,7 @@ export default function App() {
             <div className="field">
               <label>Categorie</label>
               <select value={newExp.category} onChange={e => setNewExp(p => ({ ...p, category: e.target.value }))}>
-                {DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div className="field">
@@ -660,8 +907,10 @@ export default function App() {
               <input type="text" placeholder="Ex: Chitanță utilități Aprilie" value={newExp.description} onChange={e => setNewExp(p => ({ ...p, description: e.target.value }))} />
             </div>
             <div className="modal-footer">
-              <button className="btn btn-main" style={{ flex: 1 }} onClick={addExpense}>Confirmă</button>
-              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Anulează</button>
+              <button className="btn btn-main" style={{ flex: 1 }} onClick={editingExpense ? saveEditExpense : addExpense}>
+                {editingExpense ? 'Salvează modificările' : 'Confirmă'}
+              </button>
+              <button className="btn btn-ghost" onClick={() => { setShowAdd(false); setEditingExpense(null); }}>Anulează</button>
             </div>
           </div>
         </div>
@@ -690,7 +939,14 @@ export default function App() {
         </div>
       )}
 
-      {toast && <div className="toast-alert">{toast}</div>}
+      {toast && (
+        <div className={`toast-alert toast-${toastType}`}>
+          <span className="toast-icon">
+            {toastType === 'success' ? '✓' : toastType === 'error' ? '✕' : '⚠'}
+          </span>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
