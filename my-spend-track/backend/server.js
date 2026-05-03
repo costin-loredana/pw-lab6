@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const swaggerUi = require("swagger-ui-express");
+
 const app = express();
 const PORT = 3001;
 const JWT_SECRET = "lab7-super-secret-key-2026";
@@ -11,7 +12,6 @@ const JWT_SECRET = "lab7-super-secret-key-2026";
 app.use(cors());
 app.use(express.json());
 
-// Database Config
 const DB_PATH = path.join(__dirname, "database.json");
 
 function loadDatabase() {
@@ -21,7 +21,7 @@ function loadDatabase() {
       console.log("Database loaded from file");
       return {
         expenses: data.expenses || [],
-        categories: data.categories || [],
+        categories: data.categories || getDefaultCategories(),
         salary: data.salary || { amount: null },
       };
     }
@@ -29,26 +29,24 @@ function loadDatabase() {
     console.error("Error loading database:", err.message);
   }
   
-  console.log("Creating new database with sample data");
+  console.log("Creating new database");
   return {
-    expenses: [
-      { id: "ex1", date: "2026-04-01", amount: 7500.00, category: "housing", description: "Chirie apartament Aprilie" },
-      { id: "ex2", date: "2026-04-05", amount: 485.50, category: "food", description: "Cumparaturi saptamanale" },
-      { id: "ex3", date: "2026-04-10", amount: 120.00, category: "transport", description: "Alimentare combustibil" },
-      { id: "ex4", date: "2026-04-12", amount: 320.00, category: "health", description: "Consultatie medicala" },
-      { id: "ex5", date: "2026-05-01", amount: 210.00, category: "entertainment", description: "Cinema & restaurant" },
-    ],
-    categories: [
-      { id: "food", name: "Alimentatie & Produse", color: "#2e7d32" },
-      { id: "transport", name: "Transport & Combustibil", color: "#546e7a" },
-      { id: "housing", name: "Chirie & Servicii Comunale", color: "#455a64" },
-      { id: "health", name: "Sanatate & Farmacie", color: "#c62828" },
-      { id: "entertainment", name: "Timp Liber & Cultura", color: "#1565c0" },
-      { id: "shopping", name: "Cumparaturi & Haine", color: "#6a1b9a" },
-      { id: "other", name: "Diverse", color: "#9e9e9e" },
-    ],
+    expenses: [],
+    categories: getDefaultCategories(),
     salary: { amount: null },
   };
+}
+
+function getDefaultCategories() {
+  return [
+    { id: "food", name: "Alimentatie & Produse", color: "#2e7d32" },
+    { id: "transport", name: "Transport & Combustibil", color: "#546e7a" },
+    { id: "housing", name: "Chirie & Servicii Comunale", color: "#455a64" },
+    { id: "health", name: "Sanatate & Farmacie", color: "#c62828" },
+    { id: "entertainment", name: "Timp Liber & Cultura", color: "#1565c0" },
+    { id: "shopping", name: "Cumparaturi & Haine", color: "#6a1b9a" },
+    { id: "other", name: "Diverse", color: "#9e9e9e" },
+  ];
 }
 
 function saveDatabase() {
@@ -65,7 +63,6 @@ let expenses = db.expenses;
 let categories = db.categories;
 let salaryConfig = db.salary;
 
-// Helpers
 function uid() { 
   return Math.random().toString(36).slice(2) + Date.now().toString(36); 
 }
@@ -79,14 +76,12 @@ function paginate(array, page = 1, limit = 20) {
   return { data, pagination: { page: p, limit: l, total, totalPages } };
 }
 
-// Role & Permission Config
 const ROLE_PERMISSIONS = {
   ADMIN:   ["READ", "WRITE", "DELETE"],
   WRITER:  ["READ", "WRITE"],
   VISITOR: ["READ"],
 };
 
-// JWT Middleware
 function auth(requiredPermission) {
   return (req, res, next) => {
     const header = req.headers.authorization;
@@ -117,12 +112,10 @@ function auth(requiredPermission) {
   };
 }
 
-// Root
 app.get("/", (req, res) => {
-  res.json({ message: "Finance Tracker API", version: "4.0.0", stage: "Pagination" });
+  res.json({ message: "Finance Tracker API", version: "4.0.0", docs: "/docs" });
 });
 
-// Token
 app.post("/token", (req, res) => {
   const { role, permissions } = req.body || {};
   
@@ -143,7 +136,7 @@ app.post("/token", (req, res) => {
   res.status(400).json({ error: "Provide 'role' or 'permissions'" });
 });
 
-// EXPENSES CRUD with Pagination
+// EXPENSES
 app.get("/expenses", auth("READ"), (req, res) => {
   const { page = 1, limit = 20, category, month, sort = "date_desc" } = req.query;
   
@@ -221,7 +214,7 @@ app.delete("/expenses/:id", auth("DELETE"), (req, res) => {
   res.status(204).send();
 });
 
-// CATEGORIES CRUD with Pagination
+// CATEGORIES
 app.get("/categories", auth("READ"), (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const withCounts = categories.map(c => ({
@@ -315,7 +308,7 @@ app.get("/stats", auth("READ"), (req, res) => {
   });
 });
 
-// Swagger Documentation
+// SWAGGER
 const swaggerDocument = {
   openapi: "3.0.0",
   info: {
@@ -328,232 +321,56 @@ const swaggerDocument = {
     securitySchemes: {
       BearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
     },
-    schemas: {
-      Expense: {
-        type: "object",
-        properties: {
-          id:          { type: "string", example: "abc123" },
-          date:        { type: "string", format: "date", example: "2026-04-01" },
-          amount:      { type: "number", example: 7500.00 },
-          category:    { type: "string", example: "housing" },
-          description: { type: "string", example: "Chirie apartament" },
-        },
-      },
-      Category: {
-        type: "object",
-        properties: {
-          id:           { type: "string", example: "food" },
-          name:         { type: "string", example: "Alimentatie & Produse" },
-          color:        { type: "string", example: "#2e7d32" },
-          expenseCount: { type: "integer", example: 5 },
-        },
-      },
-      Pagination: {
-        type: "object",
-        properties: {
-          page:       { type: "integer" },
-          limit:      { type: "integer" },
-          total:      { type: "integer" },
-          totalPages: { type: "integer" },
-        },
-      },
-    },
   },
   paths: {
     "/token": {
       post: {
         tags: ["Auth"],
         summary: "Get JWT token",
-        description: "Returns a JWT valid for 60 seconds. Pass role or permissions.",
         requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  role: { type: "string", enum: ["ADMIN", "WRITER", "VISITOR"] },
-                  permissions: { type: "array", items: { type: "string" } },
-                },
-              },
-            },
-          },
+          content: { "application/json": { schema: { type: "object", properties: { role: { type: "string", enum: ["ADMIN", "WRITER", "VISITOR"] } } } } },
         },
-        responses: {
-          200: { description: "JWT token returned" },
-          400: { description: "Invalid role or permissions" },
-        },
+        responses: { 200: { description: "JWT token" } },
       },
     },
     "/expenses": {
       get: {
         tags: ["Expenses"],
-        summary: "List expenses with pagination and filters",
+        summary: "List expenses (paginated)",
         security: [{ BearerAuth: [] }],
         parameters: [
-          { name: "page",     in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit",    in: "query", schema: { type: "integer", default: 20 } },
-          { name: "category", in: "query", schema: { type: "string" } },
-          { name: "month",    in: "query", schema: { type: "string", example: "2026-04" } },
-          { name: "sort",     in: "query", schema: { type: "string", enum: ["date_desc", "date_asc", "amount_desc", "amount_asc"] } },
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
         ],
-        responses: {
-          200: { description: "Paginated list of expenses" },
-          401: { description: "Unauthorized" },
-        },
+        responses: { 200: { description: "Paginated expenses" } },
       },
       post: {
         tags: ["Expenses"],
-        summary: "Create a new expense",
+        summary: "Create expense",
         security: [{ BearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["date", "amount", "category"],
-                properties: {
-                  date:        { type: "string", format: "date" },
-                  amount:      { type: "number" },
-                  category:    { type: "string" },
-                  description: { type: "string" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: { description: "Expense created" },
-          400: { description: "Validation error" },
-          401: { description: "Unauthorized" },
-          403: { description: "Forbidden" },
-        },
-      },
-    },
-    "/expenses/{id}": {
-      get: {
-        tags: ["Expenses"],
-        summary: "Get expense by ID",
-        security: [{ BearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          200: { description: "Expense found" },
-          404: { description: "Not found" },
-        },
-      },
-      put: {
-        tags: ["Expenses"],
-        summary: "Update expense",
-        security: [{ BearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          200: { description: "Expense updated" },
-          404: { description: "Not found" },
-        },
-      },
-      delete: {
-        tags: ["Expenses"],
-        summary: "Delete expense",
-        security: [{ BearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          204: { description: "Expense deleted" },
-          404: { description: "Not found" },
-        },
+        responses: { 201: { description: "Created" } },
       },
     },
     "/categories": {
       get: {
         tags: ["Categories"],
-        summary: "List categories with pagination",
+        summary: "List categories",
         security: [{ BearerAuth: [] }],
-        parameters: [
-          { name: "page",  in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: { 200: { description: "Paginated list of categories" } },
+        responses: { 200: { description: "Categories list" } },
       },
       post: {
         tags: ["Categories"],
-        summary: "Create a new category",
+        summary: "Create category",
         security: [{ BearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["name"],
-                properties: {
-                  name:  { type: "string" },
-                  color: { type: "string" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: { description: "Category created" },
-          409: { description: "Category already exists" },
-        },
-      },
-    },
-    "/categories/{id}": {
-      get: {
-        tags: ["Categories"],
-        summary: "Get category by ID",
-        security: [{ BearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "Category found" } },
-      },
-      put: {
-        tags: ["Categories"],
-        summary: "Update category",
-        security: [{ BearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "Category updated" } },
-      },
-      delete: {
-        tags: ["Categories"],
-        summary: "Delete category",
-        security: [{ BearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          204: { description: "Category deleted" },
-          409: { description: "Category has associated expenses" },
-        },
-      },
-    },
-    "/salary": {
-      get: {
-        tags: ["Salary"],
-        summary: "Get salary config",
-        security: [{ BearerAuth: [] }],
-        responses: { 200: { description: "Current salary" } },
-      },
-      put: {
-        tags: ["Salary"],
-        summary: "Update salary",
-        security: [{ BearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: { amount: { type: "number", nullable: true } },
-              },
-            },
-          },
-        },
-        responses: { 200: { description: "Salary updated" } },
+        responses: { 201: { description: "Created" } },
       },
     },
     "/stats": {
       get: {
         tags: ["Stats"],
-        summary: "Get aggregated statistics",
+        summary: "Get statistics",
         security: [{ BearerAuth: [] }],
-        responses: { 200: { description: "Statistics object" } },
+        responses: { 200: { description: "Statistics" } },
       },
     },
   },
@@ -564,5 +381,5 @@ app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/docs`);
-  console.log(`Stage 4b: Swagger Documentation Ready`);
+  console.log("Stage 4: Ready");
 });
