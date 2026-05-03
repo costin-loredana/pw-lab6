@@ -3,7 +3,7 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
-
+const swaggerUi = require("swagger-ui-express");
 const app = express();
 const PORT = 3001;
 const JWT_SECRET = "lab7-super-secret-key-2026";
@@ -315,7 +315,254 @@ app.get("/stats", auth("READ"), (req, res) => {
   });
 });
 
+// Swagger Documentation
+const swaggerDocument = {
+  openapi: "3.0.0",
+  info: {
+    title: "Finance Tracker API",
+    version: "4.0.0",
+    description: "REST API for personal finance tracker with JWT authentication, pagination, and CRUD operations.",
+  },
+  servers: [{ url: `http://localhost:${PORT}`, description: "Local server" }],
+  components: {
+    securitySchemes: {
+      BearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+    },
+    schemas: {
+      Expense: {
+        type: "object",
+        properties: {
+          id:          { type: "string", example: "abc123" },
+          date:        { type: "string", format: "date", example: "2026-04-01" },
+          amount:      { type: "number", example: 7500.00 },
+          category:    { type: "string", example: "housing" },
+          description: { type: "string", example: "Chirie apartament" },
+        },
+      },
+      Category: {
+        type: "object",
+        properties: {
+          id:           { type: "string", example: "food" },
+          name:         { type: "string", example: "Alimentatie & Produse" },
+          color:        { type: "string", example: "#2e7d32" },
+          expenseCount: { type: "integer", example: 5 },
+        },
+      },
+      Pagination: {
+        type: "object",
+        properties: {
+          page:       { type: "integer" },
+          limit:      { type: "integer" },
+          total:      { type: "integer" },
+          totalPages: { type: "integer" },
+        },
+      },
+    },
+  },
+  paths: {
+    "/token": {
+      post: {
+        tags: ["Auth"],
+        summary: "Get JWT token",
+        description: "Returns a JWT valid for 60 seconds. Pass role or permissions.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  role: { type: "string", enum: ["ADMIN", "WRITER", "VISITOR"] },
+                  permissions: { type: "array", items: { type: "string" } },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "JWT token returned" },
+          400: { description: "Invalid role or permissions" },
+        },
+      },
+    },
+    "/expenses": {
+      get: {
+        tags: ["Expenses"],
+        summary: "List expenses with pagination and filters",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "page",     in: "query", schema: { type: "integer", default: 1 } },
+          { name: "limit",    in: "query", schema: { type: "integer", default: 20 } },
+          { name: "category", in: "query", schema: { type: "string" } },
+          { name: "month",    in: "query", schema: { type: "string", example: "2026-04" } },
+          { name: "sort",     in: "query", schema: { type: "string", enum: ["date_desc", "date_asc", "amount_desc", "amount_asc"] } },
+        ],
+        responses: {
+          200: { description: "Paginated list of expenses" },
+          401: { description: "Unauthorized" },
+        },
+      },
+      post: {
+        tags: ["Expenses"],
+        summary: "Create a new expense",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["date", "amount", "category"],
+                properties: {
+                  date:        { type: "string", format: "date" },
+                  amount:      { type: "number" },
+                  category:    { type: "string" },
+                  description: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Expense created" },
+          400: { description: "Validation error" },
+          401: { description: "Unauthorized" },
+          403: { description: "Forbidden" },
+        },
+      },
+    },
+    "/expenses/{id}": {
+      get: {
+        tags: ["Expenses"],
+        summary: "Get expense by ID",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: { description: "Expense found" },
+          404: { description: "Not found" },
+        },
+      },
+      put: {
+        tags: ["Expenses"],
+        summary: "Update expense",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: { description: "Expense updated" },
+          404: { description: "Not found" },
+        },
+      },
+      delete: {
+        tags: ["Expenses"],
+        summary: "Delete expense",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          204: { description: "Expense deleted" },
+          404: { description: "Not found" },
+        },
+      },
+    },
+    "/categories": {
+      get: {
+        tags: ["Categories"],
+        summary: "List categories with pagination",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: "page",  in: "query", schema: { type: "integer", default: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
+        ],
+        responses: { 200: { description: "Paginated list of categories" } },
+      },
+      post: {
+        tags: ["Categories"],
+        summary: "Create a new category",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name:  { type: "string" },
+                  color: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Category created" },
+          409: { description: "Category already exists" },
+        },
+      },
+    },
+    "/categories/{id}": {
+      get: {
+        tags: ["Categories"],
+        summary: "Get category by ID",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Category found" } },
+      },
+      put: {
+        tags: ["Categories"],
+        summary: "Update category",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Category updated" } },
+      },
+      delete: {
+        tags: ["Categories"],
+        summary: "Delete category",
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          204: { description: "Category deleted" },
+          409: { description: "Category has associated expenses" },
+        },
+      },
+    },
+    "/salary": {
+      get: {
+        tags: ["Salary"],
+        summary: "Get salary config",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Current salary" } },
+      },
+      put: {
+        tags: ["Salary"],
+        summary: "Update salary",
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: { amount: { type: "number", nullable: true } },
+              },
+            },
+          },
+        },
+        responses: { 200: { description: "Salary updated" } },
+      },
+    },
+    "/stats": {
+      get: {
+        tags: ["Stats"],
+        summary: "Get aggregated statistics",
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: "Statistics object" } },
+      },
+    },
+  },
+};
+
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Stage 4a: Pagination + Filtering Ready`);
+  console.log(`Swagger UI: http://localhost:${PORT}/docs`);
+  console.log(`Stage 4b: Swagger Documentation Ready`);
 });
