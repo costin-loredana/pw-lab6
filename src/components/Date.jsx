@@ -1,10 +1,11 @@
 import React, { useRef, useState } from "react";
 
-export default function DateView({ token, tokenRole, countdown, stats, categories, expenses, formatCurrency, showToast, onLogout }) {
+export default function DateView({ token, tokenRole, countdown, stats, categories, expenses, formatCurrency, showToast, onLogout, onImport }) {
   const fileRef = useRef();
   const [pasteText, setPasteText] = useState("");
   const [copiedCSV, setCopiedCSV] = useState(false);
   const [copiedLLM, setCopiedLLM] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const API_BASE = "http://localhost:3001";
 
@@ -102,6 +103,109 @@ Total inregistrari: 5
     showToast(`Exemplu ${type.toUpperCase()} descarcat`);
   };
 
+  // ── PARSE helpers ──────────────────────────────────────────────
+
+  const parseCSVLine = (line) => {
+    // Handles quoted fields with commas inside
+    const result = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const processImport = (text) => {
+    if (!text?.trim()) {
+      showToast("Nu exista text de importat");
+      return;
+    }
+
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    const parsed = [];
+
+    for (const line of lines) {
+      // Skip headers / comment lines
+      if (
+        line.startsWith("#") ||
+        line.startsWith("-") ||
+        line.startsWith("Generat") ||
+        line.startsWith("Total") ||
+        line.startsWith("##") ||
+        line.startsWith("Data,")
+      ) continue;
+
+      // Format LLM pipe: 2026-04-01 | 7500.00 | housing | Descriere
+      if (line.match(/^\d{4}-\d{2}-\d{2}\s*\|/)) {
+        const parts = line.split("|").map(s => s.trim());
+        const date = parts[0];
+        const amount = parseFloat(parts[1]);
+        const category = parts[2];
+        const description = parts[3] || "";
+        if (date && !isNaN(amount) && category) {
+          parsed.push({ date, amount, category, description });
+        }
+        continue;
+      }
+
+      // Format CSV: 2026-04-01,7500.00,housing,"Nume","Descriere"
+      if (line.match(/^\d{4}-\d{2}-\d{2},/)) {
+        const parts = parseCSVLine(line);
+        const date = parts[0];
+        const amount = parseFloat(parts[1]);
+        const category = parts[2];
+        const description = parts[4] || "";
+        if (date && !isNaN(amount) && category) {
+          parsed.push({ date, amount, category, description });
+        }
+      }
+    }
+
+    if (parsed.length > 0) {
+      onImport?.(parsed);
+      showToast(`${parsed.length} înregistrări importate cu succes`);
+      setPasteText("");
+    } else {
+      showToast("Nu s-au găsit înregistrări valide în text");
+    }
+  };
+
+  // ── File upload handler (THE FIX) ──────────────────────────────
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const text = await file.text();
+      setPasteText(text);
+      processImport(text);
+    } catch (err) {
+      showToast("Eroare la citirea fișierului");
+    } finally {
+      setImporting(false);
+      // Reset input so the same file can be re-selected
+      e.target.value = "";
+    }
+  };
+
+  // ── Handle paste-area import button ───────────────────────────
+
+  const handlePasteImport = () => {
+    processImport(pasteText);
+  };
+
   return (
     <main className="fade-in">
       <div className="io-section">
@@ -127,9 +231,20 @@ Total inregistrari: 5
           sau <strong>Text LLM</strong> (format pipe: <code>data | suma | categorie_id | descriere</code>).
         </p>
 
-        <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: "none" }} />
-        <button className="btn-upload" onClick={() => fileRef.current?.click()}>
-          Incarca fisier - .csv sau .txt
+        {/* ← onChange adăugat aici — FIX PRINCIPAL */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.txt"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
+        <button
+          className="btn-upload"
+          onClick={() => fileRef.current?.click()}
+          disabled={importing}
+        >
+          {importing ? "Se importă..." : "Incarca fisier - .csv sau .txt"}
         </button>
 
         <div className="field" style={{ marginTop: 20 }}>
@@ -140,6 +255,12 @@ Total inregistrari: 5
             placeholder={`Exemplu CSV:\n2026-04-01,7500.00,housing,"Chirie","Chirie apartament"\n\nExemplu Text LLM:\n## Cheltuieli\n2026-04-01 | 7500.00 | housing | Chirie apartament`}
           />
         </div>
+
+        {pasteText.trim() && (
+          <button className="btn btn-main" style={{ marginTop: 12 }} onClick={handlePasteImport}>
+            Importa text
+          </button>
+        )}
       </div>
 
       <div className="io-divider" />

@@ -16,7 +16,16 @@ export default function Dashboard({ stats, categories, expenses, salary, theme, 
   const donutData = useMemo(() => {
     if (!stats?.byCategory) return [];
     return Object.entries(stats.byCategory)
-      .map(([id, total]) => ({ id, total, cat: categories.find(c => c.id === id) }))
+      .filter(([_, total]) => {
+        // Filtrăm valorile invalide (NaN, null, undefined, 0)
+        const numTotal = Number(total);
+        return !isNaN(numTotal) && numTotal > 0;
+      })
+      .map(([id, total]) => ({ 
+        id, 
+        total: Number(total), // Conversie explicită la număr
+        cat: categories.find(c => c.id === id) 
+      }))
       .sort((a, b) => b.total - a.total);
   }, [stats, categories]);
 
@@ -55,10 +64,15 @@ export default function Dashboard({ stats, categories, expenses, salary, theme, 
 
   const topCategory = useMemo(() => {
     if (!stats?.byCategory) return null;
-    const entries = Object.entries(stats.byCategory).sort((a, b) => b[1] - a[1]);
+    const entries = Object.entries(stats.byCategory)
+      .filter(([_, total]) => {
+        const numTotal = Number(total);
+        return !isNaN(numTotal) && numTotal > 0;
+      })
+      .sort((a, b) => Number(b[1]) - Number(a[1]));
     if (!entries.length) return null;
     const [id, total] = entries[0];
-    return { cat: categories.find(c => c.id === id), total };
+    return { cat: categories.find(c => c.id === id), total: Number(total) };
   }, [stats, categories]);
 
   return (
@@ -136,17 +150,26 @@ export default function Dashboard({ stats, categories, expenses, salary, theme, 
                 <Doughnut data={donutChartData} options={donutOptions} />
               </div>
               <div className="donut-legend">
-                {donutData.map((d, i) => {
-                  const total = donutData.reduce((s, x) => s + x.total, 0);
-                  const pct = Math.round(d.total / total * 100);
-                  return (
-                    <div key={d.id} className="legend-item">
-                      <span className="legend-swatch" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-                      <span className="legend-name">{d.cat?.name || d.id}</span>
-                      <span className="legend-pct">{pct}%</span>
-                    </div>
-                  );
-                })}
+                {(() => {
+                  // Calculează suma totală o singură dată
+                  const grandTotal = donutData.reduce((sum, item) => {
+                    const val = typeof item.total === 'number' && !isNaN(item.total) ? item.total : 0;
+                    return sum + val;
+                  }, 0);
+                  
+                  return donutData.map((d, i) => {
+                    const safeTotal = typeof d.total === 'number' && !isNaN(d.total) ? d.total : 0;
+                    const pct = grandTotal > 0 ? Math.round((safeTotal / grandTotal) * 100) : 0;
+                    
+                    return (
+                      <div key={d.id} className="legend-item">
+                        <span className="legend-swatch" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                        <span className="legend-name">{d.cat?.name || d.id}</span>
+                        <span className="legend-pct">{pct}%</span>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           ) : (

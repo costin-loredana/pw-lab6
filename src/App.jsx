@@ -81,7 +81,7 @@ export default function App() {
   // Login handler
   const handleLogin = (tok, expiresIn, role) => {
     setToken(tok);
-    setTokenExp(Date.now() + expiresIn * 1000);
+    setTokenExp(Date.now() + expiresIn * 1800);
     setTokenRole(role);
     setCountdown(expiresIn);
     showToast(`Connected as ${role}`);
@@ -170,11 +170,12 @@ export default function App() {
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
   };
 
+  // FIX 1: token era omis în apelul DELETE
   const deleteExpense = async (id) => {
     if (!window.confirm("Sigur stergeti aceasta tranzactie?")) return;
     try {
       setLoading(true);
-      await apiFetch(`/expenses/${id}`, { method: "DELETE" }, token);
+      await apiFetch(`/expenses/${id}`, { method: "DELETE" }, token); // token adăugat
       await fetchAll(pagination.page);
       showToast("Tranzactie stearsa");
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
@@ -232,6 +233,42 @@ export default function App() {
       showToast(v !== null ? "Salariu configurat" : "Salariu eliminat");
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
   };
+
+  // FIX 2: handler pentru import din DateView
+  // Primește array de { date, amount, category, description }
+  // și le înregistrează pe rând via API
+  const handleImport = useCallback(async (rows) => {
+    if (!rows?.length) return;
+    setLoading(true);
+    let ok = 0;
+    let fail = 0;
+    try {
+      for (const row of rows) {
+        try {
+          await apiFetch("/expenses", {
+            method: "POST",
+            body: JSON.stringify({
+              date: row.date,
+              amount: Number(row.amount),
+              category: row.category,
+              description: row.description || "",
+            }),
+          }, token);
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      await fetchAll(1);
+      if (fail === 0) {
+        showToast(`${ok} înregistrări importate cu succes`);
+      } else {
+        showToast(`${ok} importate, ${fail} eșuate`, "error");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, fetchAll, showToast]);
 
   // Token Gate
   if (!token) {
@@ -330,6 +367,7 @@ export default function App() {
         />
       )}
 
+      {/* FIX 3: onImport pasat către DateView */}
       {view === "io" && (
         <DateView
           token={token}
@@ -341,6 +379,7 @@ export default function App() {
           formatCurrency={formatCurrency}
           showToast={showToast}
           onLogout={handleLogout}
+          onImport={handleImport}
         />
       )}
 
