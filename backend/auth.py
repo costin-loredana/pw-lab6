@@ -8,7 +8,7 @@ from jose import JWTError, ExpiredSignatureError, jwt
 
 JWT_SECRET = os.getenv("JWT_SECRET", "lab7-super-secret-key-2026")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", "60"))
+JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", "1800"))
 
 ROLE_PERMISSIONS: dict[str, List[str]] = {
     "ADMIN":   ["READ", "WRITE", "DELETE"],

@@ -43,7 +43,7 @@ app = FastAPI(
         "REST API for the personal finance tracker.\n\n"
         "**Auth:** call `POST /token` to get a JWT, then use it as "
         "`Authorization: Bearer <token>` on all other endpoints.\n\n"
-        "Token expires in **60 seconds** (demo). Roles: `ADMIN`, `WRITER`, `VISITOR`."
+        "Token expires in **30 minutes** (1800 seconds). Roles: `ADMIN`, `WRITER`, `VISITOR`."
     ),
     docs_url="/docs",
     redoc_url="/redoc",
@@ -134,7 +134,7 @@ def root():
     summary="Get a JWT token",
     description=(
         "Pass `role` (ADMIN | WRITER | VISITOR) **or** a custom `permissions` list.\n\n"
-        "Token expires in 60 seconds (demo)."
+        "Token expires in 30 minutes (1800 seconds)."
     ),
 )
 def get_token(body: TokenRequest):
@@ -534,7 +534,7 @@ def update_salary(body: SalaryUpdate, _user=WRITE):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STATS
+#  STATS - FIXED VERSION (no NaN issues)
 # ══════════════════════════════════════════════════════════════════
 
 @app.get("/stats", response_model=StatsOut, tags=["Stats"])
@@ -543,52 +543,73 @@ def get_stats(_user=READ):
 
     with get_db() as conn:
         with get_cursor(conn) as cur:
-            # Totals
-            cur.execute("SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total FROM expenses")
+            # Totals - use COALESCE to avoid NULL
+            cur.execute("""
+                SELECT 
+                    COALESCE(COUNT(*), 0) AS cnt, 
+                    COALESCE(SUM(amount), 0)::float AS total 
+                FROM expenses
+            """)
             totals = cur.fetchone()
-
+            
             # Current month
-            cur.execute(
-                """
-                SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
+            cur.execute("""
+                SELECT 
+                    COALESCE(COUNT(*), 0) AS cnt, 
+                    COALESCE(SUM(amount), 0)::float AS total
                 FROM expenses
                 WHERE TO_CHAR(date, 'YYYY-MM') = %s
-                """,
-                (cur_month,),
-            )
+            """, (cur_month,))
             cm = cur.fetchone()
 
-            # By category
-            cur.execute(
-                """
-                SELECT category_id, COALESCE(SUM(amount), 0) AS total
-                FROM expenses GROUP BY category_id
-                """
-            )
-            by_cat = {r["category_id"]: r["total"] for r in cur.fetchall()}
+            # By category - ONLY include categories with expenses > 0
+            cur.execute("""
+                SELECT 
+                    category_id, 
+                    COALESCE(SUM(amount), 0)::float AS total
+                FROM expenses 
+                GROUP BY category_id
+            """)
+            by_cat = {}
+            for r in cur.fetchall():
+                cat_id = r["category_id"]
+                total = float(r["total"]) if r["total"] is not None else 0.0
+                if total > 0:  # Only include categories with actual expenses
+                    by_cat[cat_id] = total
 
             # By month
-            cur.execute(
-                """
-                SELECT TO_CHAR(date, 'YYYY-MM') AS month,
-                       COALESCE(SUM(amount), 0)  AS total
-                FROM expenses GROUP BY 1 ORDER BY 1
-                """
-            )
-            by_month = {r["month"]: r["total"] for r in cur.fetchall()}
+            cur.execute("""
+                SELECT 
+                    TO_CHAR(date, 'YYYY-MM') AS month,
+                    COALESCE(SUM(amount), 0)::float AS total
+                FROM expenses 
+                GROUP BY 1 
+                ORDER BY 1
+            """)
+            by_month = {}
+            for r in cur.fetchall():
+                month = r["month"]
+                total = float(r["total"]) if r["total"] is not None else 0.0
+                by_month[month] = total
 
             # Salary
             cur.execute("SELECT amount FROM salary_config WHERE id = 1")
             sal_row = cur.fetchone()
-            salary = sal_row["amount"] if sal_row else None
+            salary = float(sal_row["amount"]) if sal_row and sal_row["amount"] is not None else None
 
-    cm_total = cm["total"]
+    cm_total = float(cm["total"]) if cm["total"] is not None else 0.0
     remaining = (salary - cm_total) if salary is not None else None
+    if remaining is not None:
+        remaining = float(remaining)
 
     return StatsOut(
-        total_expenses=totals["cnt"],
-        total_amount=totals["total"],
-        current_month=MonthStats(month=cur_month, total=cm_total, count=cm["cnt"]),
+        total_expenses=int(totals["cnt"]) if totals["cnt"] is not None else 0,
+        total_amount=float(totals["total"]) if totals["total"] is not None else 0.0,
+        current_month=MonthStats(
+            month=cur_month, 
+            total=cm_total, 
+            count=int(cm["cnt"]) if cm["cnt"] is not None else 0
+        ),
         by_category=by_cat,
         by_month=by_month,
         salary=salary,
