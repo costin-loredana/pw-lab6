@@ -8,21 +8,29 @@ from jose import JWTError, ExpiredSignatureError, jwt
 
 JWT_SECRET = os.getenv("JWT_SECRET", "lab7-super-secret-key-2026")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", "1800"))
+JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", "60"))
 
-ROLE_PERMISSIONS: dict[str, List[str]] = {
-    "ADMIN":   ["READ", "WRITE", "DELETE"],
-    "WRITER":  ["READ", "WRITE"],
-    "VISITOR": ["READ"],
-}
+# Permisiunile disponibile in aplicatie si ce pot face:
+#
+#   READ    — vede lista de cheltuieli, categorii, salariu
+#   WRITE   — adauga si editeaza cheltuieli, categorii, salariu
+#   DELETE  — sterge cheltuieli si categorii
+#   ANALYZE — acceseaza /stats, exporturi CSV/LLM, dashboard cu grafice
+#
+# Nu exista roluri. Tokenul stocheaza direct lista de permisiuni.
+# Exemplu token payload: { "permissions": ["READ", "ANALYZE"], "exp": ... }
+
+ALL_PERMISSIONS = ["READ", "WRITE", "DELETE", "ANALYZE"]
 
 bearer_scheme = HTTPBearer()
 
 
-def create_token(payload: dict) -> str:
-    to_encode = payload.copy()
-    to_encode["exp"] = datetime.now(timezone.utc) + timedelta(seconds=JWT_EXPIRE_SECONDS)
-    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+def create_token(permissions: List[str]) -> str:
+    payload = {
+        "permissions": permissions,
+        "exp": datetime.now(timezone.utc) + timedelta(seconds=JWT_EXPIRE_SECONDS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def _decode(token: str) -> dict:
@@ -43,14 +51,13 @@ def _decode(token: str) -> dict:
 
 
 def require_permission(permission: str):
-    """FastAPI dependency factory — checks a single permission."""
+    """FastAPI dependency — verifica o permisiune specifica din token."""
 
     def dependency(
         credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     ) -> dict:
         payload = _decode(credentials.credentials)
-        permissions: List[str] = payload.get("permissions") or \
-            ROLE_PERMISSIONS.get(payload.get("role", ""), [])
+        permissions: List[str] = payload.get("permissions", [])
 
         if permission not in permissions:
             raise HTTPException(
@@ -63,7 +70,8 @@ def require_permission(permission: str):
     return dependency
 
 
-# Shorthand dependencies used in route decorators
-READ   = Depends(require_permission("READ"))
-WRITE  = Depends(require_permission("WRITE"))
-DELETE = Depends(require_permission("DELETE"))
+# Shorthand-uri folosite in route decorators
+READ    = Depends(require_permission("READ"))
+WRITE   = Depends(require_permission("WRITE"))
+DELETE  = Depends(require_permission("DELETE"))
+ANALYZE = Depends(require_permission("ANALYZE"))

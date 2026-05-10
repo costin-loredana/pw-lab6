@@ -11,7 +11,6 @@ def to_camel(s: str) -> str:
 
 
 class CamelModel(BaseModel):
-    """Base model that serializes to camelCase for the React frontend."""
     model_config = {
         "alias_generator": to_camel,
         "populate_by_name": True,
@@ -20,17 +19,25 @@ class CamelModel(BaseModel):
 
 
 # ── Auth ──────────────────────────────────────────────────────────
+# Nu exista roluri. Clientul trimite direct lista de permisiuni dorite.
+# Permisiuni valide: READ, WRITE, DELETE, ANALYZE
 
 class TokenRequest(BaseModel):
-    role: Optional[str] = Field(None, description="ADMIN | WRITER | VISITOR")
-    permissions: Optional[List[str]] = Field(None, description="['READ','WRITE','DELETE']")
-    model_config = {"json_schema_extra": {"example": {"role": "ADMIN"}}}
+    permissions: List[str] = Field(
+        ...,
+        description="Lista de permisiuni: READ, WRITE, DELETE, ANALYZE",
+        min_length=1,
+    )
+    model_config = {
+        "json_schema_extra": {
+            "example": {"permissions": ["READ", "WRITE", "ANALYZE"]}
+        }
+    }
 
 
 class TokenResponse(CamelModel):
     token: str
-    expires_in: int        # → expiresIn
-    role: Optional[str] = None
+    expires_in: int          # → expiresIn
     permissions: List[str]
 
 
@@ -120,10 +127,10 @@ class MonthStats(CamelModel):
 
 
 class StatsOut(CamelModel):
-    total_expenses: int          # → totalExpenses
-    total_amount: Decimal        # → totalAmount
-    current_month: MonthStats    # → currentMonth
-    by_category: dict[str, Decimal]   # → byCategory
-    by_month: dict[str, Decimal]      # → byMonth
+    total_expenses: int
+    total_amount: Decimal
+    current_month: MonthStats
+    by_category: dict[str, Decimal]
+    by_month: dict[str, Decimal]
     salary: Optional[Decimal]
     remaining: Optional[Decimal]
