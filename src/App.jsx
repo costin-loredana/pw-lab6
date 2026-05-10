@@ -10,53 +10,78 @@ import "./App.css";
 
 ChartJS.register(ArcElement, CJTooltip, Legend);
 
+const VALID_CATEGORIES = ["food", "transport", "housing", "utilities", "health", "entertainment", "shopping", "education", "other"];
+
+const sanitizeStr = (str) => {
+  if (!str) return "";
+  return String(str).trim().replace(/"/g, "'").replace(/\\/g, "").replace(/[\r\n\t]/g, " ").replace(/\s+/g, " ").slice(0, 100);
+};
+const sanitizeCat = (cat) => {
+  if (!cat) return "other";
+  const c = String(cat).trim().toLowerCase();
+  return VALID_CATEGORIES.includes(c) ? c : "other";
+};
+const sanitizeAmount = (val) => {
+  if (val === null || val === undefined || val === "") return null;
+  const cleaned = String(val).replace(/\s/g, "").replace(/[^\d.,\-]/g, "").replace(/,(\d{2})$/, ".$1").replace(/,/g, "");
+  const n = parseFloat(cleaned);
+  if (isNaN(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+};
+const sanitizeDate = (val) => {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+};
+
 export default function App() {
   const [theme, setTheme] = useState("light");
   const [view, setView] = useState("sinteza");
 
-  // Auth
-  const [token, setToken] = useState(null);
-  const [tokenExp, setTokenExp] = useState(null);
-  const [tokenRole, setTokenRole] = useState("ADMIN");
-  const [apiError, setApiError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  // Auth — stocam permissions[] in loc de role
+  const [token, setToken]           = useState(null);
+  const [tokenExp, setTokenExp]     = useState(null);
+  const [permissions, setPermissions] = useState([]); // ex: ["READ","WRITE","ANALYZE"]
+  const [apiError, setApiError]     = useState(null);
+  const [loading, setLoading]       = useState(false);
+
+  // Helpers pentru verificarea permisiunilor
+  const can = useCallback((perm) => permissions.includes(perm), [permissions]);
 
   // Data
-  const [expenses, setExpenses] = useState([]);
+  const [expenses, setExpenses]     = useState([]);
   const [categories, setCategories] = useState([]);
-  const [salary, setSalary] = useState(null);
-  const [stats, setStats] = useState(null);
+  const [salary, setSalary]         = useState(null);
+  const [stats, setStats]           = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
 
   // Filters
-  const [filterCat, setFilterCat] = useState("all");
+  const [filterCat, setFilterCat]     = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
-  const [sortOrder, setSortOrder] = useState("date_desc");
+  const [sortOrder, setSortOrder]     = useState("date_desc");
 
   // Modals
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd]       = useState(false);
   const [showSalary, setShowSalary] = useState(false);
   const [editingExp, setEditingExp] = useState(null);
   const [editingCat, setEditingCat] = useState(null);
   const [salaryInput, setSalaryInput] = useState("");
-  const [newExp, setNewExp] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
+  const [newExp, setNewExp]         = useState({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
   const [newCategory, setNewCategory] = useState({ name: "", color: "#6366f1" });
-  const [toast, setToast] = useState(null);
-  const [toastType, setToastType] = useState("success");
+  const [toast, setToast]           = useState(null);
+  const [toastType, setToastType]   = useState("success");
 
-  // Theme
   useEffect(() => {
     document.body.className = theme === "dark" ? "dark-theme" : "";
   }, [theme]);
 
-  // Toast
   const showToast = useCallback((msg, type = "success") => {
     setToast(msg);
     setToastType(type);
     setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // Format
   const formatCurrency = (v) => Number(v).toLocaleString("ro-MD", { minimumFractionDigits: 2 }) + " MDL";
 
   // Token countdown
@@ -69,7 +94,8 @@ export default function App() {
         setCountdown(0);
         setToken(null);
         setTokenExp(null);
-        showToast("Token expired", "error");
+        setPermissions([]);
+        showToast("Token expirat", "error");
         clearInterval(iv);
       } else {
         setCountdown(left);
@@ -78,22 +104,22 @@ export default function App() {
     return () => clearInterval(iv);
   }, [tokenExp, showToast]);
 
-  // Login handler
-  const handleLogin = (tok, expiresIn, role) => {
+  // Login — primim permissions[] de la LoginScreen
+  const handleLogin = (tok, expiresIn, perms) => {
     setToken(tok);
-    setTokenExp(Date.now() + expiresIn * 1800);
-    setTokenRole(role);
+    setTokenExp(Date.now() + expiresIn * 1000);
+    setPermissions(perms);
     setCountdown(expiresIn);
-    showToast(`Connected as ${role}`);
+    showToast(`Conectat cu: ${perms.join(", ")}`);
   };
 
-  // Logout handler
   const handleLogout = () => {
     setToken(null);
     setTokenExp(null);
+    setPermissions([]);
   };
 
-  // Fetch all data
+  // Fetch — /stats necesita ANALYZE, le incarcam conditionat
   const fetchAll = useCallback(async (pg = 1) => {
     if (!token) return;
     setLoading(true);
@@ -103,34 +129,40 @@ export default function App() {
       if (filterCat !== "all") params.set("category", filterCat);
       if (filterMonth !== "all") params.set("month", filterMonth);
 
-      const [expData, catData, salData, statData] = await Promise.all([
+      // READ — intotdeauna
+      const [expData, catData, salData] = await Promise.all([
         apiFetch(`/expenses?${params}`, {}, token),
         apiFetch("/categories?limit=100", {}, token),
         apiFetch("/salary", {}, token),
-        apiFetch("/stats", {}, token),
       ]);
-
       setExpenses(expData.data);
       setPagination(expData.pagination);
       setCategories(catData.data);
       setSalary(salData.amount);
-      setStats(statData);
+
+      // ANALYZE — doar daca are permisiunea
+      if (permissions.includes("ANALYZE")) {
+        const statData = await apiFetch("/stats", {}, token);
+        setStats(statData);
+      } else {
+        setStats(null);
+      }
     } catch (e) {
       setApiError(e.message);
       if (e.message.includes("expired")) {
         setToken(null);
         setTokenExp(null);
+        setPermissions([]);
       }
     } finally {
       setLoading(false);
     }
-  }, [token, filterCat, filterMonth, sortOrder]);
+  }, [token, filterCat, filterMonth, sortOrder, permissions]);
 
   useEffect(() => {
     fetchAll(1);
   }, [fetchAll]);
 
-  // Month list
   const monthsList = useMemo(() => {
     if (!stats?.byMonth) return [];
     return Object.keys(stats.byMonth).sort().reverse();
@@ -170,12 +202,11 @@ export default function App() {
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
   };
 
-  // FIX 1: token era omis în apelul DELETE
   const deleteExpense = async (id) => {
     if (!window.confirm("Sigur stergeti aceasta tranzactie?")) return;
     try {
       setLoading(true);
-      await apiFetch(`/expenses/${id}`, { method: "DELETE" }, token); // token adăugat
+      await apiFetch(`/expenses/${id}`, { method: "DELETE" }, token);
       await fetchAll(pagination.page);
       showToast("Tranzactie stearsa");
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
@@ -193,10 +224,7 @@ export default function App() {
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
   };
 
-  const startEditCat = (cat) => {
-    setEditingCat(cat.id);
-    setNewCategory({ name: cat.name, color: cat.color });
-  };
+  const startEditCat = (cat) => { setEditingCat(cat.id); setNewCategory({ name: cat.name, color: cat.color }); };
 
   const saveEditCat = async () => {
     if (!newCategory.name.trim()) return showToast("Numele este obligatoriu", "error");
@@ -234,46 +262,46 @@ export default function App() {
     } catch (e) { showToast(e.message, "error"); } finally { setLoading(false); }
   };
 
-  // FIX 2: handler pentru import din DateView
-  // Primește array de { date, amount, category, description }
-  // și le înregistrează pe rând via API
+  // Import
   const handleImport = useCallback(async (rows) => {
-    if (!rows?.length) return;
+    if (!rows || !rows.length) { showToast("Nu exista date de importat", "error"); return; }
     setLoading(true);
-    let ok = 0;
-    let fail = 0;
-    try {
-      for (const row of rows) {
+    let ok = 0, fail = 0, skipped = 0;
+    for (const row of rows) {
+      const date = sanitizeDate(row.date);
+      const amount = sanitizeAmount(row.amount);
+      const category = sanitizeCat(row.category);
+      const description = sanitizeStr(row.description);
+      if (!date || !amount) { skipped++; continue; }
+      try {
+        await apiFetch("/expenses", { method: "POST", body: JSON.stringify({ date, amount, category, description }) }, token);
+        ok++;
+      } catch {
         try {
-          await apiFetch("/expenses", {
-            method: "POST",
-            body: JSON.stringify({
-              date: row.date,
-              amount: Number(row.amount),
-              category: row.category,
-              description: row.description || "",
-            }),
-          }, token);
+          await apiFetch("/expenses", { method: "POST", body: JSON.stringify({ date, amount, category, description: "" }) }, token);
           ok++;
-        } catch {
-          fail++;
-        }
+        } catch { fail++; }
       }
-      await fetchAll(1);
-      if (fail === 0) {
-        showToast(`${ok} înregistrări importate cu succes`);
-      } else {
-        showToast(`${ok} importate, ${fail} eșuate`, "error");
-      }
-    } finally {
-      setLoading(false);
     }
+    await fetchAll(1);
+    if (fail === 0 && skipped === 0) {
+      showToast(`${ok} inregistrari importate cu succes`, "success");
+    } else {
+      let msg = "";
+      if (ok > 0) msg += `${ok} importate. `;
+      if (fail > 0) msg += `${fail} esuate. `;
+      if (skipped > 0) msg += `${skipped} sarite.`;
+      showToast(msg.trim(), fail > 0 ? "error" : "success");
+    }
+    setLoading(false);
   }, [token, fetchAll, showToast]);
 
-  // Token Gate
   if (!token) {
     return <LoginScreen onLogin={handleLogin} />;
   }
+
+  // Badge permisiuni in header
+  const PERM_COLORS = { READ: "#378ADD", WRITE: "#1D9E75", DELETE: "#D85A30", ANALYZE: "#7F77DD" };
 
   return (
     <div className="container">
@@ -288,24 +316,38 @@ export default function App() {
         </div>
         <div className="header-actions">
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+
+            {/* Token info cu permisiuni colorate */}
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600,
-              background: countdown > 15 ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
-              color: countdown > 15 ? "#10b981" : "#ef4444",
+              padding: "6px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+              background: countdown > 15 ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
               border: `1px solid ${countdown > 15 ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
             }}>
-              {countdown}s - {tokenRole}
+              <span style={{ color: countdown > 15 ? "#10b981" : "#ef4444" }}>{countdown}s</span>
+              <span style={{ color: "var(--muted)", margin: "0 2px" }}>·</span>
+              {permissions.map(p => (
+                <span key={p} style={{ color: PERM_COLORS[p], fontFamily: "monospace", fontSize: 10 }}>{p}</span>
+              ))}
               <button onClick={handleLogout}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, marginLeft: 4 }}>x</button>
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 14, marginLeft: 2 }}>×</button>
             </div>
+
             <div className="view-switcher">
               {["sinteza", "jurnal", "categorii", "io"].map(v => (
-                <button key={v} className={view === v ? "active" : ""} onClick={() => setView(v)}>
+                <button
+                  key={v}
+                  className={view === v ? "active" : ""}
+                  onClick={() => setView(v)}
+                  disabled={v === "sinteza" && !can("ANALYZE")}
+                  title={v === "sinteza" && !can("ANALYZE") ? "Necesita permisiunea ANALYZE" : ""}
+                  style={{ opacity: v === "sinteza" && !can("ANALYZE") ? 0.4 : 1 }}
+                >
                   {v === "sinteza" ? "Dashboard" : v === "jurnal" ? "Jurnal" : v === "categorii" ? "Categorii" : "Date"}
                 </button>
               ))}
             </div>
+
             <button className="btn btn-ghost" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
               {theme === "dark" ? "Light" : "Dark"}
             </button>
@@ -320,17 +362,27 @@ export default function App() {
         </div>
       )}
 
+      {/* Dashboard necesita ANALYZE */}
       {view === "sinteza" && (
-        <Dashboard
-          stats={stats}
-          categories={categories}
-          expenses={expenses}
-          salary={salary}
-          theme={theme}
-          formatCurrency={formatCurrency}
-          onSetView={setView}
-          onConfigureSalary={() => { setSalaryInput(salary?.toString() || ""); setShowSalary(true); }}
-        />
+        can("ANALYZE") ? (
+          <Dashboard
+            stats={stats}
+            categories={categories}
+            expenses={expenses}
+            salary={salary}
+            theme={theme}
+            formatCurrency={formatCurrency}
+            onSetView={setView}
+            onConfigureSalary={() => { setSalaryInput(salary?.toString() || ""); setShowSalary(true); }}
+            canWrite={can("WRITE")}
+          />
+        ) : (
+          <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--muted)" }}>
+            <div style={{ fontSize: 32, marginBottom: 16 }}>🔒</div>
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Permisiunea ANALYZE necesara</div>
+            <div style={{ fontSize: 13 }}>Dashboard-ul si statisticile sunt disponibile doar cu permisiunea ANALYZE.</div>
+          </div>
+        )
       )}
 
       {view === "jurnal" && (
@@ -346,9 +398,9 @@ export default function App() {
           monthsList={monthsList}
           pagination={pagination}
           formatCurrency={formatCurrency}
-          onAdd={() => { setEditingExp(null); setShowAdd(true); }}
-          onEdit={startEdit}
-          onDelete={deleteExpense}
+          onAdd={can("WRITE") ? () => { setEditingExp(null); setShowAdd(true); } : null}
+          onEdit={can("WRITE") ? startEdit : null}
+          onDelete={can("DELETE") ? deleteExpense : null}
           fetchAll={fetchAll}
         />
       )}
@@ -359,19 +411,20 @@ export default function App() {
           newCategory={newCategory}
           setNewCategory={setNewCategory}
           editingCat={editingCat}
-          onAddCategory={addCategory}
-          onEditCategory={startEditCat}
+          onAddCategory={can("WRITE") ? addCategory : null}
+          onEditCategory={can("WRITE") ? startEditCat : null}
           onSaveEditCategory={saveEditCat}
           onCancelEdit={() => { setEditingCat(null); setNewCategory({ name: "", color: "#6366f1" }); }}
-          onDeleteCategory={deleteCategory}
+          onDeleteCategory={can("DELETE") ? deleteCategory : null}
+          canWrite={can("WRITE")}
+          canDelete={can("DELETE")}
         />
       )}
 
-      {/* FIX 3: onImport pasat către DateView */}
       {view === "io" && (
         <DateView
           token={token}
-          tokenRole={tokenRole}
+          permissions={permissions}
           countdown={countdown}
           stats={stats}
           categories={categories}
@@ -379,12 +432,14 @@ export default function App() {
           formatCurrency={formatCurrency}
           showToast={showToast}
           onLogout={handleLogout}
-          onImport={handleImport}
+          onImport={can("WRITE") ? handleImport : null}
+          canAnalyze={can("ANALYZE")}
+          canWrite={can("WRITE")}
         />
       )}
 
       {/* Modal Add/Edit Expense */}
-      {showAdd && (
+      {showAdd && can("WRITE") && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
           <div className="modal-box">
             <h2 className="serif-header">{editingExp ? "Editare Tranzactie" : "Formular Inregistrare"}</h2>
@@ -417,7 +472,7 @@ export default function App() {
       )}
 
       {/* Modal Salary */}
-      {showSalary && (
+      {showSalary && can("WRITE") && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSalary(false)}>
           <div className="modal-box">
             <h2 className="serif-header">Configurare Salariu</h2>
@@ -434,7 +489,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <div className={`toast-alert toast-${toastType}`}>
           <span className="toast-icon">{toastType === "success" ? "OK" : toastType === "error" ? "ERR" : "WARN"}</span>
