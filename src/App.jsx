@@ -39,38 +39,34 @@ export default function App() {
   const [theme, setTheme] = useState("light");
   const [view, setView] = useState("sinteza");
 
-  // Auth — stocam permissions[] in loc de role
-  const [token, setToken]           = useState(null);
-  const [tokenExp, setTokenExp]     = useState(null);
-  const [permissions, setPermissions] = useState([]); // ex: ["READ","WRITE","ANALYZE"]
-  const [apiError, setApiError]     = useState(null);
-  const [loading, setLoading]       = useState(false);
+  const [token, setToken]               = useState(null);
+  const [tokenExp, setTokenExp]         = useState(null);
+  const [permissions, setPermissions]   = useState([]);
+  const [apiError, setApiError]         = useState(null);
+  const [loading, setLoading]           = useState(false);
 
-  // Helpers pentru verificarea permisiunilor
   const can = useCallback((perm) => permissions.includes(perm), [permissions]);
 
-  // Data
-  const [expenses, setExpenses]     = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [salary, setSalary]         = useState(null);
-  const [stats, setStats]           = useState(null);
-  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [expenses, setExpenses]         = useState([]);
+  const [categories, setCategories]     = useState([]);
+  const [salary, setSalary]             = useState(null);
+  const [stats, setStats]               = useState(null);
+  const [pagination, setPagination]     = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
 
-  // Filters
-  const [filterCat, setFilterCat]     = useState("all");
-  const [filterMonth, setFilterMonth] = useState("all");
-  const [sortOrder, setSortOrder]     = useState("date_desc");
+  const [filterCat, setFilterCat]       = useState("all");
+  const [filterMonth, setFilterMonth]   = useState("all");
+  const [sortOrder, setSortOrder]       = useState("date_desc");
 
-  // Modals
-  const [showAdd, setShowAdd]       = useState(false);
-  const [showSalary, setShowSalary] = useState(false);
-  const [editingExp, setEditingExp] = useState(null);
-  const [editingCat, setEditingCat] = useState(null);
-  const [salaryInput, setSalaryInput] = useState("");
-  const [newExp, setNewExp]         = useState({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
-  const [newCategory, setNewCategory] = useState({ name: "", color: "#6366f1" });
-  const [toast, setToast]           = useState(null);
-  const [toastType, setToastType]   = useState("success");
+  const [showAdd, setShowAdd]           = useState(false);
+  const [showSalary, setShowSalary]     = useState(false);
+  const [editingExp, setEditingExp]     = useState(null);
+  const [editingCat, setEditingCat]     = useState(null);
+  const [salaryInput, setSalaryInput]   = useState("");
+  const [newExp, setNewExp]             = useState({ date: new Date().toISOString().slice(0, 10), amount: "", category: "food", description: "" });
+  const [newCategory, setNewCategory]   = useState({ name: "", color: "#6366f1" });
+  const [toast, setToast]               = useState(null);
+  const [toastType, setToastType]       = useState("success");
+  const [countdown, setCountdown]       = useState(null);
 
   useEffect(() => {
     document.body.className = theme === "dark" ? "dark-theme" : "";
@@ -84,8 +80,6 @@ export default function App() {
 
   const formatCurrency = (v) => Number(v).toLocaleString("ro-MD", { minimumFractionDigits: 2 }) + " MDL";
 
-  // Token countdown
-  const [countdown, setCountdown] = useState(null);
   useEffect(() => {
     if (!tokenExp) return;
     const iv = setInterval(() => {
@@ -104,24 +98,10 @@ export default function App() {
     return () => clearInterval(iv);
   }, [tokenExp, showToast]);
 
-  // Login — primim permissions[] de la LoginScreen
-  const handleLogin = (tok, expiresIn, perms) => {
-    setToken(tok);
-    setTokenExp(Date.now() + expiresIn * 1000);
-    setPermissions(perms);
-    setCountdown(expiresIn);
-    showToast(`Conectat cu: ${perms.join(", ")}`);
-  };
-
-  const handleLogout = () => {
-    setToken(null);
-    setTokenExp(null);
-    setPermissions([]);
-  };
-
-  // Fetch — /stats necesita ANALYZE, le incarcam conditionat
-  const fetchAll = useCallback(async (pg = 1) => {
+  // ── fetchAll accepta perms optional ca sa evitam stale closure la primul login ──
+  const fetchAll = useCallback(async (pg = 1, permsOverride = null) => {
     if (!token) return;
+    const activePerms = permsOverride ?? permissions;  // ← fix principal
     setLoading(true);
     setApiError(null);
     try {
@@ -129,7 +109,6 @@ export default function App() {
       if (filterCat !== "all") params.set("category", filterCat);
       if (filterMonth !== "all") params.set("month", filterMonth);
 
-      // READ — intotdeauna
       const [expData, catData, salData] = await Promise.all([
         apiFetch(`/expenses?${params}`, {}, token),
         apiFetch("/categories?limit=100", {}, token),
@@ -140,8 +119,7 @@ export default function App() {
       setCategories(catData.data);
       setSalary(salData.amount);
 
-      // ANALYZE — doar daca are permisiunea
-      if (permissions.includes("ANALYZE")) {
+      if (activePerms.includes("ANALYZE")) {
         const statData = await apiFetch("/stats", {}, token);
         setStats(statData);
       } else {
@@ -149,7 +127,7 @@ export default function App() {
       }
     } catch (e) {
       setApiError(e.message);
-      if (e.message.includes("expired")) {
+      if (e.message.includes("expired") || e.message.includes("Invalid token")) {
         setToken(null);
         setTokenExp(null);
         setPermissions([]);
@@ -162,6 +140,27 @@ export default function App() {
   useEffect(() => {
     fetchAll(1);
   }, [fetchAll]);
+
+  // ── handleLogin paseaza perms direct la fetchAll ca sa nu citeasca state-ul vechi ──
+  const handleLogin = (tok, expiresIn, perms) => {
+    setToken(tok);
+    setTokenExp(Date.now() + expiresIn * 1000);
+    setPermissions(perms);
+    setCountdown(expiresIn);
+    showToast(`Conectat cu: ${perms.join(", ")}`);
+    // Nu apelam fetchAll aici — useEffect pe [fetchAll] se va declanса automat
+    // cand token-ul se seteaza, cu permisiunile corecte din closure-ul nou
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setTokenExp(null);
+    setPermissions([]);
+    setExpenses([]);
+    setCategories([]);
+    setSalary(null);
+    setStats(null);
+  };
 
   const monthsList = useMemo(() => {
     if (!stats?.byMonth) return [];
@@ -300,7 +299,6 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  // Badge permisiuni in header
   const PERM_COLORS = { READ: "#378ADD", WRITE: "#1D9E75", DELETE: "#D85A30", ANALYZE: "#7F77DD" };
 
   return (
@@ -317,7 +315,6 @@ export default function App() {
         <div className="header-actions">
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
 
-            {/* Token info cu permisiuni colorate */}
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               padding: "6px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600,
@@ -362,7 +359,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Dashboard necesita ANALYZE */}
       {view === "sinteza" && (
         can("ANALYZE") ? (
           <Dashboard
@@ -438,7 +434,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal Add/Edit Expense */}
       {showAdd && can("WRITE") && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
           <div className="modal-box">
@@ -471,7 +466,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Salary */}
       {showSalary && can("WRITE") && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSalary(false)}>
           <div className="modal-box">

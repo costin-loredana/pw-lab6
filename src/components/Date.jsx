@@ -14,18 +14,28 @@ export default function DateView({
   const API_BASE = "http://localhost:3001";
 
   const download = (content, filename, type) => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([content], { type }));
-    a.download = filename;
-    a.click();
+    try {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast("Eroare la descarcarea fisierului", "error");
+    }
   };
 
   const exportCSV = () => {
     if (!canAnalyze) { showToast("Necesita permisiunea ANALYZE", "error"); return; }
+    if (!expenses || expenses.length === 0) { showToast("Nu exista date de exportat", "error"); return; }
     const header = ["Data", "Suma (MDL)", "Categorie ID", "Descriere"];
     const rows = expenses.map(e => [
       e.date,
-      e.amount.toFixed(2),
+      Number(e.amount).toFixed(2),      // ← fix: Number() inainte de toFixed
       e.category,
       `"${(e.description || "").replace(/"/g, '""')}"`,
     ]);
@@ -36,11 +46,12 @@ export default function DateView({
 
   const exportLLM = () => {
     if (!canAnalyze) { showToast("Necesita permisiunea ANALYZE", "error"); return; }
+    if (!expenses || expenses.length === 0) { showToast("Nu exista date de exportat", "error"); return; }
     const monthStats = {};
     expenses.forEach(e => {
       const m = e.date.slice(0, 7);
       if (!monthStats[m]) monthStats[m] = { total: 0, count: 0 };
-      monthStats[m].total += e.amount;
+      monthStats[m].total += Number(e.amount);   // ← fix: Number()
       monthStats[m].count++;
     });
     const lines = [
@@ -52,10 +63,10 @@ export default function DateView({
       ...categories.map(c => `- [${c.id}] ${c.name}`),
       "",
       "## Cheltuieli (data | suma MDL | categorie_id | descriere)",
-      ...expenses.map(e => `${e.date} | ${e.amount.toFixed(2)} | ${e.category} | ${e.description || ""}`),
+      ...expenses.map(e => `${e.date} | ${Number(e.amount).toFixed(2)} | ${e.category} | ${e.description || ""}`),  // ← fix
       "",
       "## Sumar Lunar",
-      ...Object.entries(monthStats).sort(([a], [b]) => b.localeCompare(a)).map(([m, d]) => `${m}: ${d.total.toFixed(2)} MDL (${d.count} inregistrari)`),
+      ...Object.entries(monthStats).sort(([a], [b]) => b.localeCompare(a)).map(([m, d]) => `${m}: ${Number(d.total).toFixed(2)} MDL (${d.count} inregistrari)`),  // ← fix
     ];
     download(lines.join("\n"), "registru-cheltuieli-llm.txt", "text/plain");
     showToast("Export LLM text finalizat");
@@ -149,7 +160,6 @@ RASPUNDE DOAR CU LINIILE IN FORMAT PIPE. NIMIC ALTCEVA.`;
   };
 
   const processImport = (text) => {
-    // Blocat daca nu are WRITE
     if (!canWrite) {
       showToast("Necesita permisiunea WRITE pentru a importa", "error");
       return;
@@ -202,7 +212,6 @@ RASPUNDE DOAR CU LINIILE IN FORMAT PIPE. NIMIC ALTCEVA.`;
   };
 
   const handleFileChange = async (e) => {
-    // Blocat daca nu are WRITE
     if (!canWrite) {
       showToast("Necesita permisiunea WRITE pentru a importa", "error");
       e.target.value = "";
@@ -225,7 +234,6 @@ RASPUNDE DOAR CU LINIILE IN FORMAT PIPE. NIMIC ALTCEVA.`;
   const activePrompt = activeFormat === "csv" ? AI_PROMPT_CSV : AI_PROMPT_LLM;
   const activeCopied = activeFormat === "csv" ? copiedCSV : copiedLLM;
 
-  // Banner READ-only pentru sectiunea de import
   const ImportLockedBanner = () => (
     <div style={{
       display: "flex", alignItems: "center", gap: 12,
@@ -258,7 +266,6 @@ RASPUNDE DOAR CU LINIILE IN FORMAT PIPE. NIMIC ALTCEVA.`;
           apoi lipeste raspunsul sau incarca fisierul generat. Functioneaza cu orice banca.
         </p>
 
-        {/* Banner daca nu are WRITE */}
         {!canWrite && <ImportLockedBanner />}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20 }}>
@@ -321,7 +328,7 @@ RASPUNDE DOAR CU LINIILE IN FORMAT PIPE. NIMIC ALTCEVA.`;
             </div>
           </div>
 
-          {/* DREAPTA: Import — dezactivat vizual daca nu are WRITE */}
+          {/* DREAPTA: Import */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10, opacity: canWrite ? 1 : 0.45, pointerEvents: canWrite ? "auto" : "none" }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>
               2. Importa raspunsul

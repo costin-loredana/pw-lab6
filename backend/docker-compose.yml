@@ -29,7 +29,7 @@ services:
     environment:
       DATABASE_URL: postgresql://finance_user:finance_pass@db:5432/finance_db
       JWT_SECRET: lab7-super-secret-key-2026
-      JWT_EXPIRE_SECONDS: 60
+      JWT_EXPIRE_SECONDS: 3600
     depends_on:
       db:
         condition: service_healthy
